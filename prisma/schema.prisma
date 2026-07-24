@@ -1,0 +1,421 @@
+// PrepAI — AI interview-preparation platform
+// Schema follows §3 of the build brief. jsonb columns use Prisma `Json`.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Both point at Neon's DIRECT endpoint — its PgBouncer pooler adds a flat
+  // ~1s tax to every query (measured). src/lib/db.ts retries once on the
+  // stale-connection error (P1017) that autosuspend causes here instead.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────── enums ───────────────────────────────
+
+enum Role {
+  super_admin
+  admin
+  student
+  practice
+}
+
+enum CohortStatus {
+  draft // created, research not yet run
+  researching // company research in progress
+  active // sessions scheduled / running
+  completed
+}
+
+enum SessionStatus {
+  pending
+  in_progress
+  completed
+}
+
+enum RoundType {
+  coaching
+  test
+}
+
+enum RoundStatus {
+  pending
+  in_progress
+  completed
+}
+
+enum Speaker {
+  student
+  agent
+}
+
+// Company salary band. Derived from salaryLpa on the vacancy:
+// >10 LPA = tier_1, 4–10 = tier_2, <4 = tier_3.
+enum Tier {
+  tier_1
+  tier_2
+  tier_3
+}
+
+// Practice-flow student degree — keys the expectation matrix
+// (src/lib/research/expectationMatrix.ts) alongside the student's own CGPA.
+enum Degree {
+  btech
+  mtech
+  bba
+  mba
+  bca
+  mca
+  bcom
+  mcom
+}
+
+// ─────────────────────────────── models ───────────────────────────────
+
+model University {
+  id               String   @id @default(cuid())
+  name             String
+  sessionsAllotted Int      @default(0) @map("sessions_allotted")
+  sessionsUsed     Int      @default(0) @map("sessions_used")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  users    User[]
+  students Student[]
+  cohorts  Cohort[]
+
+  @@map("universities")
+}
+
+model User {
+  id           String  @id @default(cuid())
+  // Nullable: super_admin (platform operator) belongs to no university.
+  universityId String? @map("university_id")
+  role         Role
+  name         String
+  email        String  @unique
+  passwordHash String  @map("password_hash")
+  // Populated only for role = practice — the student's own degree + CGPA,
+  // used to key the expectation matrix (course focus areas on the drive
+  // briefing page). Null for every other role, and for practice accounts
+  // created before this field existed.
+  course       Degree?
+  cgpa         Float?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  university         University?          @relation(fields: [universityId], references: [id], onDelete: SetNull)
+  student            Student? // populated only when role = student
+  practiceRounds     PracticeRound[] // populated only when role = practice
+  practiceCompanies  PracticeCompany[] // populated only when role = practice
+  practiceResumeChat PracticeResumeChat[] // populated only when role = practice
+
+  @@index([universityId])
+  @@map("users")
+}
+
+model Student {
+  id              String  @id @default(cuid())
+  userId          String  @unique @map("user_id")
+  universityId    String  @map("university_id")
+  name            String
+  email           String
+  academicPercent Float   @map("academic_percent") // powers the hero mispricing scatter (X axis); = average of semesterScores
+  branch          String?
+  cgpa            Float?
+  rollNumber      String? @map("roll_number")
+  course          String? // e.g. "B.Tech CSE"
+  // Prior-semester percentages (5th-sem students → 4 entries). number[].
+  semesterScores  Json?   @map("semester_scores")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  university     University      @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  cohortStudents CohortStudent[]
+  sessions       Session[]
+
+  @@index([universityId])
+  @@map("students")
+}
+
+model Cohort {
+  id              String       @id @default(cuid())
+  universityId    String       @map("university_id")
+  companyName     String       @map("company_name")
+  status          CohortStatus @default(draft)
+  // Company profile produced by the research step (what they ask, question style,
+  // focus areas, ranked question themes).
+  companyResearch Json?        @map("company_research")
+  // When the company's on-campus drive / interviews happen. Drives the student's
+  // "upcoming" ordering.
+  driveDate       DateTime?    @map("drive_date")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  university     University      @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  vacancies      Vacancy[]
+  cohortStudents CohortStudent[]
+  sessions       Session[]
+
+  @@index([universityId])
+  @@map("cohorts")
+}
+
+model Vacancy {
+  id                 String @id @default(cuid())
+  cohortId           String @map("cohort_id")
+  jobTitle           String @map("job_title")
+  jobDescription     String @map("job_description")
+  // Ordered array of skills, highest priority first.
+  skillPriorities    Json   @map("skill_priorities")
+  salaryLpa          Float? @map("salary_lpa")
+  tier               Tier? // salary band, derived from salaryLpa
+  minAcademicPercent Float? @map("min_academic_percent") // eligibility gate
+
+  cohort         Cohort          @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  cohortStudents CohortStudent[]
+
+  @@index([cohortId])
+  @@map("vacancies")
+}
+
+model CohortStudent {
+  id        String  @id @default(cuid())
+  cohortId  String  @map("cohort_id")
+  studentId String  @map("student_id")
+  vacancyId String? @map("vacancy_id")
+
+  cohort  Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  student Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  vacancy Vacancy? @relation(fields: [vacancyId], references: [id], onDelete: SetNull)
+
+  @@unique([cohortId, studentId])
+  @@index([cohortId])
+  @@index([studentId])
+  @@map("cohort_students")
+}
+
+model Session {
+  id            String        @id @default(cuid())
+  cohortId      String        @map("cohort_id")
+  studentId     String        @map("student_id")
+  sessionNumber Int           @map("session_number")
+  status        SessionStatus @default(pending)
+  scheduledAt   DateTime?     @map("scheduled_at")
+  startedAt     DateTime?     @map("started_at")
+  completedAt   DateTime?     @map("completed_at")
+
+  cohort  Cohort  @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  rounds  Round[]
+
+  @@index([cohortId])
+  @@index([studentId])
+  @@map("sessions")
+}
+
+model Round {
+  id              String      @id @default(cuid())
+  sessionId       String      @map("session_id")
+  // The single most important privacy-bearing field: coaching rounds are
+  // student-private; test rounds are visible to admin too. Enforced at API layer.
+  type            RoundType
+  roundNumber     Int         @map("round_number")
+  status          RoundStatus @default(pending)
+  durationSeconds Int?        @map("duration_seconds")
+  overallScore    Float?      @map("overall_score")
+  startedAt       DateTime?   @map("started_at")
+  completedAt     DateTime?   @map("completed_at")
+
+  session   Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turns     Turn[]
+  scores    RoundScore?
+  feedback  RoundFeedback?
+  recording Recording?
+
+  @@index([sessionId])
+  @@index([type])
+  @@map("rounds")
+}
+
+model Turn {
+  id           String   @id @default(cuid())
+  roundId      String   @map("round_id")
+  turnNumber   Int      @map("turn_number")
+  speaker      Speaker
+  transcript   String
+  // Captured live, NEVER displayed live (brief §5). Shown only in the
+  // after-round score-timeline replay.
+  delta        Float?
+  runningScore Float?   @map("running_score")
+  // The 5 canonical skills at this point in the round (0-10) — drives the
+  // coaching-replay timeline. Student turns only; null on agent turns.
+  skills       Json?    @map("skills")
+  // Visual/delivery observations (posture, gaze). HARD BOUNDARY: student-private
+  // only, behaviour-not-motive. Never surfaced to admin.
+  visualFlags  Json?    @map("visual_flags")
+  timestamp    DateTime @default(now())
+
+  round Round @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId])
+  @@map("turns")
+}
+
+model RoundScore {
+  id             String @id @default(cuid())
+  roundId        String @unique @map("round_id")
+  // THE canonical 5 coachable skills (0-10). This is the one measurement model
+  // — plotted on the radar, cohort bars, and retention slope. See skill model.
+  framing        Float // 0-10
+  ownership      Float // 0-10
+  quantification Float // 0-10
+  concision      Float // 0-10
+  approach       Float // 0-10
+
+  round Round @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@map("round_scores")
+}
+
+model RoundFeedback {
+  id                   String @id @default(cuid())
+  roundId              String @unique @map("round_id")
+  summaryMd            String @map("summary_md")
+  whatWentWell         Json   @map("what_went_well") // string[]
+  areasToImprove       Json   @map("areas_to_improve") // string[]
+  coachingAdoptionRate Float? @map("coaching_adoption_rate") // 0-1: coachability signal
+
+  round Round @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@map("round_feedback")
+}
+
+model Recording {
+  id            String  @id @default(cuid())
+  roundId       String  @unique @map("round_id")
+  videoUrl      String? @map("video_url")
+  transcriptUrl String? @map("transcript_url")
+
+  round Round @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@map("recordings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Practice interview — a standalone, decoupled flow proving out the real
+// voxio-webhook → scored-turn pipeline (brief: 6-topic rubric, see customs).
+// Deliberately NOT tied to Cohort/Session/Vacancy/University — just User.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A company the student has self-registered for practice — created once,
+// reused across any number of PracticeRound "sessions" under it. Research
+// runs a single time at creation, not per session.
+model PracticeCompany {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  companyName     String   @map("company_name")
+  jobTitle        String?  @map("job_title")
+  jobDescription  String?  @map("job_description")
+  salaryLpa       Float?   @map("salary_lpa")
+  tier            Tier? // company salary band, derived from salaryLpa
+  companyResearch Json?    @map("company_research")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rounds     PracticeRound[]
+  resumeChat PracticeResumeChat?
+
+  @@index([userId])
+  @@map("practice_companies")
+}
+
+// One per (student, company) — a resumable-only career/resume chat, distinct
+// from PracticeRound's timed, scored interview sessions. The unique
+// constraint below is what enforces "resume the same thread, never start a
+// second one": callers check for an existing row and either load it or show
+// the upload screen, never create a second row for the same pair.
+model PracticeResumeChat {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  companyId  String   @unique @map("company_id")
+  resumeText String   @map("resume_text")
+  // Full ai-sdk UIMessage[] transcript, stored verbatim.
+  messages   Json     @default("[]")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company PracticeCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("practice_resume_chats")
+}
+
+model PracticeRound {
+  id           String      @id @default(cuid())
+  userId       String      @map("user_id")
+  status       RoundStatus @default(pending)
+  overallScore Float?      @map("overall_score")
+  startedAt    DateTime?   @map("started_at")
+  completedAt  DateTime?   @map("completed_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  // A session now always belongs to a PracticeCompany going forward; nullable
+  // only because rows created before this model existed have nothing to
+  // point at (see the legacy fields below, kept for those rows).
+  companyId String? @map("company_id")
+
+  // Legacy, denormalized company context from before PracticeCompany existed.
+  // Left null on every new round (identity now lives on PracticeCompany) —
+  // kept only so pre-existing rows keep rendering exactly as before.
+  companyName     String? @map("company_name")
+  jobTitle        String? @map("job_title")
+  jobDescription  String? @map("job_description")
+  salaryLpa       Float?  @map("salary_lpa")
+  tier            Tier? // company salary band, derived from salaryLpa
+  companyResearch Json?   @map("company_research")
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company PracticeCompany? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  turns   PracticeTurn[]
+
+  @@index([userId])
+  @@index([companyId])
+  @@map("practice_rounds")
+}
+
+model PracticeTurn {
+  id              String   @id @default(cuid())
+  practiceRoundId String   @map("practice_round_id")
+  turnNumber      Int      @map("turn_number")
+  speaker         Speaker
+  transcript      String
+  // The AI's spoken line this turn (agent turns only).
+  speak           String?
+  // The 6-topic score dict this turn: { posture, framing, approach, numbers,
+  // confidence, example } → { description, score (0-10), type_ }. Student
+  // turns only; null on agent turns.
+  topics          Json?
+  timestamp       DateTime @default(now())
+
+  round PracticeRound @relation(fields: [practiceRoundId], references: [id], onDelete: Cascade)
+
+  @@index([practiceRoundId])
+  @@map("practice_turns")
+}
+
+// Every raw payload the voxio webhook ever sends us, unconditionally — we
+// don't yet know its exact wire shape, so nothing gets dropped or
+// interpreted before it's captured verbatim.
+model WebhookEvent {
+  id         String   @id @default(cuid())
+  source     String   @default("voxio_practice")
+  rawBody    String   @map("raw_body")
+  parsed     Json?
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@map("webhook_events")
+}

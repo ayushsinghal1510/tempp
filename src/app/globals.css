@@ -1,0 +1,301 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PrepAI design system (brief §11)
+   Clean, modern B2B SaaS. Light theme, indigo accent, Inter, 8pt grid.
+   shadcn/Bklit semantic tokens are mapped onto the brand palette below so
+   shadcn components and Bklit charts render on-brand out of the box.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── PrepAI semantic scale ── */
+  --canvas: #fafafa; /* app background (zinc-50)  */
+  --ink: #0a0a0a; /* primary text (near-black)  */
+  --muted: #71717a; /* secondary text (zinc-500) */
+  --faint: #a1a1aa; /* tertiary text (zinc-400)  */
+  --line: #e4e4e7; /* borders (zinc-200)        */
+  --line-strong: #d4d4d8; /* zinc-300           */
+
+  --brand: #18181b; /* zinc-900 — the one accent  */
+  --brand-strong: #000000; /* hover: pure black   */
+  --brand-soft: #f4f4f5; /* zinc-100             */
+
+  --success: #16a34a;
+  --success-soft: #dcfce7;
+  --warning: #f59e0b;
+  --warning-soft: #fef3c7;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+
+  /* Mispricing-scatter quadrant tints (brief §6) */
+  --q-ready: #16a34a; /* top-right: send them             */
+  --q-unlocked: #4f46e5; /* bottom-right: under-sent (hero) */
+  --q-punt: #0ea5e9; /* top-left: worth a punt           */
+  --q-support: #f59e0b; /* bottom-left: needs support       */
+
+  /* ── shadcn / Bklit semantic tokens, mapped to the brand palette ── */
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --primary: #18181b; /* near-black — shadcn Buttons etc. */
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #0a0a0a;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5; /* zinc-100 hover */
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #18181b;
+
+  /* Categorical chart palette (Bklit/shadcn charts read these) */
+  --chart-1: #4f46e5; /* indigo */
+  --chart-2: #16a34a; /* green  */
+  --chart-3: #0ea5e9; /* sky    */
+  --chart-4: #f59e0b; /* amber  */
+  --chart-5: #8b5cf6; /* violet */
+
+  --radius: 0.75rem;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-primary: #18181b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #18181b;
+  --chart-background: oklch(1 0 0);
+  --chart-foreground: oklch(0.145 0.004 285);
+  --chart-foreground-muted: oklch(0.55 0.014 260);
+  --chart-line-primary: var(--chart-1);
+  --chart-line-secondary: var(--chart-2);
+  --chart-crosshair: oklch(0.4 0.1828 274.34);
+  --chart-grid: oklch(0.9 0 0);
+  --chart-brush-border: var(--chart-grid);
+  --chart-tooltip-background: oklch(0.21 0.006 285 / 0.8);
+  --chart-tooltip-foreground: oklch(0.985 0 0);
+  --chart-tooltip-muted: oklch(0.65 0.01 260);
+  --chart-marker-background: oklch(0.97 0.005 260);
+  --chart-marker-border: oklch(0.85 0.01 260);
+  --chart-marker-foreground: oklch(0.3 0.01 260);
+  --chart-label: oklch(0.45 0.01 260);
+  --chart-scale-01: oklch(0.98 0.003 106);
+  --chart-scale-02: oklch(0.92 0.008 106);
+  --chart-scale-03: oklch(0.82 0.015 106);
+  --chart-scale-04: oklch(0.68 0.02 106);
+  --chart-scale-05: oklch(0.55 0.025 106);
+  --chart-scale-pattern-color: oklch(0.96 0.005 106);
+  --legend: oklch(1 0 0);
+  --legend-foreground: oklch(0.141 0.005 285.823);
+  --legend-muted: oklch(0.967 0.001 286.375);
+  --legend-muted-foreground: oklch(0.552 0.016 285.938);
+  --legend-track: oklch(0.92 0.004 286.32);
+}
+
+@theme inline {
+  /* PrepAI scale → utilities (bg-canvas, text-muted, border-line, text-brand…) */
+  --color-canvas: var(--canvas);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --color-q-ready: var(--q-ready);
+  --color-q-unlocked: var(--q-unlocked);
+  --color-q-punt: var(--q-punt);
+  --color-q-support: var(--q-support);
+
+  /* shadcn / Bklit token surface */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 12px;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-chart-scale-pattern-color: var(--chart-scale-pattern-color);
+  --color-chart-scale-05: var(--chart-scale-05);
+  --color-chart-scale-04: var(--chart-scale-04);
+  --color-chart-scale-03: var(--chart-scale-03);
+  --color-chart-scale-02: var(--chart-scale-02);
+  --color-chart-scale-01: var(--chart-scale-01);
+  --color-chart-label: var(--chart-label);
+  --color-chart-marker-foreground: var(--chart-marker-foreground);
+  --color-chart-marker-border: var(--chart-marker-border);
+  --color-chart-marker-background: var(--chart-marker-background);
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+  --chart-brush-border: var(--chart-brush-border);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-crosshair: var(--chart-crosshair);
+  --chart-line-secondary: var(--chart-line-secondary);
+  --chart-line-primary: var(--chart-line-primary);
+  --color-chart-foreground-muted: var(--chart-foreground-muted);
+  --color-chart-foreground: var(--chart-foreground);
+  --color-chart-background: var(--chart-background);
+  --color-legend-track: var(----legend-track);
+  --color-legend-muted-foreground: var(----legend-muted-foreground);
+  --color-legend-muted: var(----legend-muted);
+  --color-legend-foreground: var(----legend-foreground);
+  --color-legend: var(----legend);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Reusable card primitive — flat, border-forward (no shadow) in both themes */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+}
+
+.dark {
+  /* ── PrepAI semantic scale (dark) ── */
+  --canvas: #09090b; /* app background (zinc-950) */
+  --ink: #fafafa; /* primary text   */
+  --muted: #a1a1aa; /* secondary text */
+  --faint: #71717a; /* tertiary text  */
+  --line: #27272a; /* borders        */
+  --line-strong: #3f3f46;
+
+  --brand: #e4e4e7; /* near-white — the one accent, inverted on dark */
+  --brand-strong: #ffffff;
+  --brand-soft: #1f1f23; /* dark zinc tint */
+
+  --success: #4ade80;
+  --success-soft: #052e1a;
+  --warning: #fbbf24;
+  --warning-soft: #3a2c05;
+  --danger: #f87171;
+  --danger-soft: #3a0d0d;
+
+  --q-ready: #22c55e;
+  --q-unlocked: #818cf8;
+  --q-punt: #38bdf8;
+  --q-support: #fbbf24;
+
+  /* ── shadcn / Bklit tokens (dark) ── */
+  --background: #131316;
+  --foreground: #fafafa;
+  --card: #131316;
+  --card-foreground: #fafafa;
+  --popover: #131316;
+  --popover-foreground: #fafafa;
+  --primary: #e4e4e7;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1f1f23;
+  --secondary-foreground: #fafafa;
+  --muted-foreground: #a1a1aa;
+  --accent: #1f1f23;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #e4e4e7;
+
+  --sidebar: #131316;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #e4e4e7;
+  --sidebar-primary-foreground: #0a0a0a;
+  --sidebar-accent: #1f1f23;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #27272a;
+  --sidebar-ring: #e4e4e7;
+
+  /* Categorical chart palette (keep brand hues in dark) */
+  --chart-1: #818cf8;
+  --chart-2: #4ade80;
+  --chart-3: #38bdf8;
+  --chart-4: #fbbf24;
+  --chart-5: #a78bfa;
+
+  --chart-background: oklch(0.145 0 0);
+  --chart-foreground: oklch(0.75 0 0);
+  --chart-foreground-muted: oklch(0.65 0.01 260);
+  --chart-crosshair: oklch(0.6 0.14 274);
+  --chart-grid: oklch(0.3 0.01 260);
+  --chart-brush-border: var(--chart-grid);
+  --chart-marker-background: oklch(0.25 0.01 260);
+  --chart-marker-border: oklch(0.4 0.01 260);
+  --chart-marker-foreground: oklch(0.9 0 0);
+  --chart-label: oklch(0.75 0.01 260);
+  --chart-scale-01: oklch(0.28 0.03 270);
+  --chart-scale-02: oklch(0.38 0.04 270);
+  --chart-scale-03: oklch(0.48 0.05 270);
+  --chart-scale-04: oklch(0.58 0.06 270);
+  --chart-scale-05: oklch(0.68 0.07 270);
+  --chart-scale-pattern-color: oklch(0.145 0 0);
+  --legend: oklch(0.21 0.006 285.885);
+  --legend-foreground: oklch(0.985 0 0);
+  --legend-muted: oklch(0.274 0.006 286.033);
+  --legend-muted-foreground: oklch(0.705 0.015 286.067);
+  --legend-track: oklch(0.274 0.006 286.033);
+}
+
