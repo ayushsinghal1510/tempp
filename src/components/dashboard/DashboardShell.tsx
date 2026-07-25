@@ -7,9 +7,10 @@ const ROLE_LABEL: Record<SessionUser["role"], string> = {
   super_admin: "Super Admin",
   admin: "Placement Officer",
   student: "Student",
-  // Not rendered here — practice users have their own page shell — listed
+  // Not rendered here — practice students have their own page shell — listed
   // only so this stays exhaustive against the Role enum.
   practice: "Practice",
+  practice_admin: "Educator",
 };
 
 export default function DashboardShell({
@@ -20,7 +21,13 @@ export default function DashboardShell({
   showPrivacyNote = false,
   children,
 }: {
-  user: SessionUser;
+  /**
+   * Omitted only by the loading skeletons, which render before any session
+   * lookup has happened. The chrome lives here rather than being duplicated
+   * into a parallel skeleton shell, so the sidebar and header don't shift
+   * when the real page swaps in.
+   */
+  user?: SessionUser;
   nav: NavItem[];
   title: string;
   org?: string;
@@ -62,8 +69,16 @@ export default function DashboardShell({
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden text-right leading-tight sm:block">
-              <div className="text-sm font-medium text-ink">{user.name}</div>
-              <div className="text-xs text-muted">{ROLE_LABEL[user.role]}</div>
+              {user ? (
+                <>
+                  <div className="text-sm font-medium text-ink">{user.name}</div>
+                  <div className="text-xs text-muted">
+                    {ROLE_LABEL[user.role]}
+                  </div>
+                </>
+              ) : (
+                <div className="ml-auto h-8 w-28 animate-pulse rounded-lg bg-line/60" />
+              )}
             </div>
             <ThemeToggle />
             <LogoutButton />

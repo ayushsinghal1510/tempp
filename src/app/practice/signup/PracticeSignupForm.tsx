@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DEGREES, DEGREE_LABEL } from "@/lib/research/expectationMatrix";
+import Select from "@/components/ui/Select";
 
 export default function PracticeSignupForm() {
   const router = useRouter();
@@ -98,11 +99,11 @@ export default function PracticeSignupForm() {
           <label className="block text-sm font-medium" htmlFor="course">
             Course
           </label>
-          <select
+          <Select
             id="course"
             value={course}
             onChange={(e) => setCourse(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+            className="mt-1 w-full"
           >
             <option value="">Select…</option>
             {DEGREES.map((d) => (
@@ -110,7 +111,7 @@ export default function PracticeSignupForm() {
                 {DEGREE_LABEL[d]}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div>
           <label className="block text-sm font-medium" htmlFor="cgpa">

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
+import { getAssignment } from "@/lib/practice/access";
 import { tierProfile } from "@/lib/research/tierProfiles";
 import type { CompanyResearch } from "@/lib/research/companyResearch";
 import {
@@ -40,10 +41,15 @@ export default async function PracticeBriefPage({
     redirect(`/practice/rounds/${round.id}/live`);
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: sessionUser.id },
-    select: { course: true, cgpa: true },
-  });
+  const [user, assignment] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: sessionUser.id },
+      select: { course: true, cgpa: true },
+    }),
+    round.companyId
+      ? getAssignment(sessionUser.id, round.companyId)
+      : Promise.resolve(null),
+  ]);
 
   const companyName = round.company?.companyName ?? round.companyName!;
   const jobTitle = round.company?.jobTitle ?? round.jobTitle;
@@ -171,6 +177,35 @@ export default async function PracticeBriefPage({
             </aside>
           )}
         </div>
+
+        {/* Never let a student start without knowing who can see this. */}
+        <section
+          className={`card p-5 text-sm ${
+            assignment?.mode === "assessment"
+              ? "border-warning/40 bg-warning-soft text-warning"
+              : "text-muted"
+          }`}
+        >
+          {assignment?.mode === "assessment" ? (
+            <>
+              <strong className="font-semibold">Graded assessment.</strong> Your
+              educator can see your scores, the full transcript, and the
+              recording of this round.
+            </>
+          ) : assignment ? (
+            <>
+              <strong className="font-semibold text-ink">Private drill.</strong>{" "}
+              Your educator sees your scores and progress — never the
+              transcript or the recording.
+            </>
+          ) : (
+            <>
+              <strong className="font-semibold text-ink">Private to you.</strong>{" "}
+              You added this company yourself, so nobody else can see this
+              round.
+            </>
+          )}
+        </section>
 
         <div className="flex items-center gap-3">
           <Link

@@ -6,6 +6,7 @@ import { Grid } from "@/components/charts/grid";
 import { XAxis } from "@/components/charts/x-axis";
 import { ChartTooltip } from "@/components/charts/tooltip";
 import ChartSwitch from "./ChartSwitch";
+import NeedMoreData from "./NeedMoreData";
 
 export type TopicSeries = {
   key: string;
@@ -77,15 +78,45 @@ export default function TopicsTimeline({
   const [scaled, setScaled] = useState(false);
 
   const active = hoveredLegend ?? pinned;
-  const len = Math.max(...series.map((s) => s.values.length), 1);
+  const len = Math.max(...series.map((s) => s.values.length), 0);
 
-  // The x-axis now represents real elapsed time (so a recording's playhead
-  // and this chart stay in sync) rather than synthetic even spacing.
+  // One scored turn is a dot, not a trajectory — and the even-spacing fallback
+  // below would divide by zero on it. Bail before the renderer sees it.
+  if (len < 2) {
+    return (
+      <NeedMoreData
+        message={
+          len === 0
+            ? "No scored turns in this session yet."
+            : "Only one scored turn in this session — a turn-by-turn trajectory needs at least two. A longer session will fill this in."
+        }
+      />
+    );
+  }
+
+  // The x-axis represents real elapsed time (so a recording's playhead and
+  // this chart stay in sync) rather than synthetic even spacing.
   const start = new Date("2026-01-01T00:00:00Z").getTime();
-  const safeDurationSec = Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 0;
-  const rows = Array.from({ length: len }, (_, i) => {
+  const safeDurationSec =
+    Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 0;
+
+  // Turns arrive by webhook and are occasionally written with the same (or a
+  // missing) timestamp, which stacks every point on x=0 — the chart then looks
+  // like a single vertical smear. When the real spread is degenerate, fall
+  // back to spacing the turns evenly across the session instead of trusting it.
+  const rawSeconds = Array.from({ length: len }, (_, i) => {
     const raw = turnSeconds[i];
-    const tSec = Number.isFinite(raw) ? (raw as number) : 0;
+    return Number.isFinite(raw) ? (raw as number) : 0;
+  });
+  const spread = Math.max(...rawSeconds) - Math.min(...rawSeconds);
+  const useRealTime = spread > 0.5;
+  const evenSpan = safeDurationSec > 0 ? safeDurationSec : len - 1;
+  const seconds = useRealTime
+    ? rawSeconds
+    : rawSeconds.map((_, i) => (i / (len - 1)) * evenSpan);
+
+  const rows = Array.from({ length: len }, (_, i) => {
+    const tSec = seconds[i];
     const row: Record<string, unknown> = {
       date: new Date(start + tSec * 1000),
       label: mmss(tSec),
@@ -94,22 +125,32 @@ export default function TopicsTimeline({
     return row;
   });
 
+  // The chart's x-axis spans the DATA's extent, not 0..durationSec — visx
+  // scales the time domain to [min(date), max(date)]. Positioning the kink
+  // markers and the playhead against durationSec instead put every overlay
+  // out of register with the lines underneath them, which is what made a
+  // replay look corrupted. Both now map through the same domain the lines do.
+  const domainStart = seconds[0];
+  const domainEnd = seconds[len - 1];
+  const domainSpan = domainEnd - domainStart;
+
   function fractionFor(tSec: number): number {
-    const safeTSec = Number.isFinite(tSec) ? tSec : 0;
-    if (safeDurationSec > 0) return safeTSec / safeDurationSec;
-    // Callers now always pass a positive, finite durationSec (guarded
-    // upstream) — this is only a last-resort safety net, not a real spacing
-    // strategy, so just anchor to the start rather than guessing.
-    return 0;
+    if (!Number.isFinite(tSec) || domainSpan <= 0) return 0;
+    return Math.max(0, Math.min(1, (tSec - domainStart) / domainSpan));
   }
 
   function handleChartClick(e: MouseEvent<HTMLDivElement>) {
-    if (!onSeekSeconds || safeDurationSec <= 0) return;
+    if (!onSeekSeconds || domainSpan <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const usableWidth = rect.width - MARGIN.left - MARGIN.right;
     if (usableWidth <= 0) return;
     const fraction = (e.clientX - rect.left - MARGIN.left) / usableWidth;
-    onSeekSeconds(Math.max(0, Math.min(1, fraction)) * safeDurationSec);
+    const target = domainStart + Math.max(0, Math.min(1, fraction)) * domainSpan;
+    // Seeking is against the recording's own clock, so clamp to it — the
+    // even-spacing fallback above can produce positions past the real end.
+    onSeekSeconds(
+      safeDurationSec > 0 ? Math.min(target, safeDurationSec) : target,
+    );
   }
 
   return (
@@ -183,7 +224,7 @@ export default function TopicsTimeline({
             if (!s || typeof val !== "number") return null;
             const id = `${k.seriesKey}-${k.index}-${idx}`;
             const isKinkActive = hoveredKink === id;
-            const f = fractionFor(turnSeconds[k.index] ?? 0);
+            const f = fractionFor(seconds[k.index] ?? domainStart);
             return (
               <div
                 key={id}
@@ -241,7 +282,7 @@ export default function TopicsTimeline({
         </div>
 
         {/* Playhead — sweeps in sync with the recording during playback. */}
-        {currentTimeSec != null && Number.isFinite(currentTimeSec) && safeDurationSec > 0 && (
+        {currentTimeSec != null && Number.isFinite(currentTimeSec) && domainSpan > 0 && (
           <div
             className="pointer-events-none absolute w-px bg-brand"
             style={{

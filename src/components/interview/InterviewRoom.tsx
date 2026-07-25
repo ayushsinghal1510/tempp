@@ -20,40 +20,10 @@ import {
   startPracticeRound,
   completePracticeRound,
 } from "@/lib/actions/practice";
+import { beginBackgroundUpload } from "@/lib/practice/recordingUpload";
 
 type ConnState = "connecting" | "connected" | "failed";
 type AiState = "waiting" | "listening" | "thinking" | "speaking";
-
-/**
- * fetch() has no native upload-progress event, so a blind timeout is the only
- * way to bound it — which either aborts a still-healthy upload too early (a
- * multi-minute recording over a slow connection) or hangs with zero feedback.
- * XMLHttpRequest's `upload.onprogress` gives real percentage instead of both.
- */
-function uploadWithProgress(
-  url: string,
-  blob: Blob,
-  contentType: string,
-  onProgress: (pct: number) => void,
-  timeoutMs: number,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
-    xhr.setRequestHeader("Content-Type", contentType);
-    xhr.timeout = timeoutMs;
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new Error(`upload failed: HTTP ${xhr.status}`));
-    };
-    xhr.onerror = () => reject(new Error("upload network error"));
-    xhr.ontimeout = () => reject(new Error("upload timed out"));
-    xhr.send(blob);
-  });
-}
 
 export default function InterviewRoom({
   roundId,
@@ -89,7 +59,6 @@ export default function InterviewRoom({
   const [hasAiVid, setHasAiVid] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -611,10 +580,20 @@ export default function InterviewRoom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connState, variant]);
 
-  const stopAndUploadRecording = useCallback(async (): Promise<void> => {
+  /**
+   * Seals the recording and hands it to the background uploader. Returns
+   * whether a recording is actually on its way, which is what tells the server
+   * to expect a file.
+   *
+   * Everything awaited here is local and fast — stopping the recorder and
+   * patching the webm header. The network transfer deliberately is not
+   * awaited: the student is done and shouldn't be held on the call screen
+   * watching a progress bar for a file they've already finished producing.
+   */
+  const sealAndQueueRecording = useCallback(async (): Promise<boolean> => {
     try {
       const recorder = mediaRecorderRef.current;
-      if (!recorder) return;
+      if (!recorder) return false;
 
       if (recorder.state !== "inactive") {
         await new Promise<void>((resolve) => {
@@ -626,7 +605,7 @@ export default function InterviewRoom({
 
       const chunks = recordedChunksRef.current;
       recordedChunksRef.current = [];
-      if (chunks.length === 0) return;
+      if (chunks.length === 0) return false;
 
       const mimeType = recordingMimeTypeRef.current || "video/webm";
       let blob = new Blob(chunks, { type: mimeType });
@@ -640,21 +619,11 @@ export default function InterviewRoom({
         blob = await fixWebmDuration(blob, durationMs).catch(() => blob);
       }
 
-      setUploadProgress(0);
-      // A generous bound (not a blind 15s) — a multi-minute recording over a
-      // slow connection needs real time, not an arbitrary cutoff that drops
-      // it entirely; the percentage below is the actual feedback instead.
-      await uploadWithProgress(
-        `/api/practice/rounds/${roundId}/recording`,
-        blob,
-        mimeType,
-        setUploadProgress,
-        90_000,
-      );
+      beginBackgroundUpload(roundId, blob, mimeType);
+      return true;
     } catch (err) {
-      console.warn("[recording] upload failed — continuing without it:", err);
-    } finally {
-      setUploadProgress(null);
+      console.warn("[recording] could not queue upload:", err);
+      return false;
     }
   }, [roundId]);
 
@@ -668,17 +637,20 @@ export default function InterviewRoom({
   };
 
   const leave = async () => {
+    let recordingExpected = false;
     if (variant === "practice") {
       setSaving(true);
-      await stopAndUploadRecording();
+      recordingExpected = await sealAndQueueRecording();
     }
     cleanup();
     if (variant === "practice") {
       // For now, leaving simply ends the round — considered complete. Must be
       // awaited (not fire-and-forget): this is what invalidates the cached
       // dashboard/company reads, and navigating before it completes can land
-      // on `/practice` mid-invalidation.
-      await completePracticeRound(roundId).catch(() => {});
+      // on `/practice` mid-invalidation. `recordingExpected` is also what
+      // makes the results page wait for the upload instead of reporting that
+      // there's no recording.
+      await completePracticeRound(roundId, recordingExpected).catch(() => {});
     }
     router.push(backHref);
   };
@@ -840,11 +812,9 @@ export default function InterviewRoom({
           disabled={saving}
           className="rounded-full border border-danger/40 bg-danger/10 px-5 py-2.5 text-sm font-semibold text-danger transition hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {saving
-            ? uploadProgress != null
-              ? `Saving recording… ${uploadProgress}%`
-              : "Saving recording…"
-            : "Leave"}
+          {/* Only covers sealing the file, which is a second or two — the
+              upload itself now runs after the student has already left. */}
+          {saving ? "Wrapping up…" : "Leave"}
         </button>
       </footer>
 

@@ -7,6 +7,7 @@ import { Grid } from "@/components/charts/grid";
 import { XAxis } from "@/components/charts/x-axis";
 import { ChartTooltip } from "@/components/charts/tooltip";
 import { cn } from "@/lib/utils";
+import NeedMoreData from "./NeedMoreData";
 
 export type SessionPoint = { label: string; value: number };
 export type SessionCategory = {
@@ -44,10 +45,13 @@ export default function SessionsChart({
   points,
   categories,
   max = 10,
+  emptyMessage = "One session so far — a trend needs at least two. Run another and this chart fills in.",
 }: {
   points: SessionPoint[];
   categories: SessionCategory[];
   max?: number;
+  /** Shown instead of the chart when there are fewer than two sessions to join. */
+  emptyMessage?: string;
 }) {
   const [mode, setMode] = useState<Mode>("scores");
   const [pinned, setPinned] = useState<string | null>(null);
@@ -62,6 +66,11 @@ export default function SessionsChart({
     () => points.map((p, i) => (i === 0 ? 0 : p.value - points[i - 1].value)),
     [points],
   );
+
+  // Guarded here rather than at each call site — every caller of a line chart
+  // otherwise has to remember the same rule, and one that forgets renders an
+  // empty axis with a stray dot on it. All hooks above run unconditionally.
+  if (len < 2) return <NeedMoreData message={emptyMessage} />;
 
   const rows = Array.from({ length: len }, (_, i) => {
     const row: Record<string, unknown> = {

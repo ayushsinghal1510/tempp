@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth/session";
+import { roundVisibilityForEducator } from "@/lib/practice/access";
 import {
   ensureRecordingsDir,
   extensionForContentType,
@@ -17,18 +18,43 @@ export const runtime = "nodejs";
 // calls redirect() on failure, which a fetch()-based request (default
 // redirect: "follow") would silently follow to the login page and report
 // resp.ok === true, masking an auth failure instead of surfacing it.
-async function authorizeRound(roundId: string) {
+
+const unauthorized = () =>
+  NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const notFound = () => NextResponse.json({ error: "Not found" }, { status: 404 });
+
+/** Writing a recording is the owning student's alone, always. */
+async function authorizeUpload(roundId: string) {
   const user = await currentUser();
-  if (!user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  if (!user) return { error: unauthorized() };
 
   const round = await prisma.practiceRound.findUnique({
     where: { id: roundId },
     select: { userId: true },
   });
-  if (!round || round.userId !== user.id) {
-    return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
-  }
+  if (!round || round.userId !== user.id) return { error: notFound() };
   return { error: null };
+}
+
+/**
+ * Playback: the owning student always, plus their educator when the round was
+ * run under an `assessment` assignment. Gated by the same
+ * roundVisibilityForEducator used by the educator session page, so the video
+ * can never be reachable in a case where the transcript isn't.
+ */
+async function authorizePlayback(roundId: string) {
+  const user = await currentUser();
+  if (!user) return { error: unauthorized() };
+
+  const round = await prisma.practiceRound.findUnique({
+    where: { id: roundId },
+    select: { userId: true },
+  });
+  if (!round) return { error: notFound() };
+  if (round.userId === user.id) return { error: null };
+
+  const visibility = await roundVisibilityForEducator(user.id, roundId);
+  return visibility.content ? { error: null } : { error: notFound() };
 }
 
 export async function POST(
@@ -36,7 +62,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const { error } = await authorizeRound(id);
+  const { error } = await authorizeUpload(id);
   if (error) return error;
   if (!req.body) {
     return NextResponse.json({ error: "Empty body" }, { status: 400 });
@@ -55,6 +81,13 @@ export async function POST(
     fs.createWriteStream(destPath),
   );
 
+  // Only after the stream has fully drained to disk — flipping this earlier
+  // would tell the results page to render a <video> over a half-written file.
+  await prisma.practiceRound.update({
+    where: { id },
+    data: { recordingStatus: "ready" },
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -63,7 +96,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const { error } = await authorizeRound(id);
+  const { error } = await authorizePlayback(id);
   if (error) return error;
 
   const found = await findRecording(id);

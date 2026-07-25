@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import type { UIMessage } from "ai";
 import { requireUser } from "@/lib/auth/session";
-import { prisma } from "@/lib/db";
+import { requireAccessibleCompany } from "@/lib/practice/access";
 import { getResumeChat } from "@/lib/practice/resumeChat";
 import PracticeHeader from "@/components/practice/PracticeHeader";
 import ResumeChatStart from "@/components/practice/ResumeChatStart";
@@ -18,12 +17,7 @@ export default async function ResumeChatPage({
   const { id } = await params;
   const user = await requireUser(["practice"], "/practice/login");
 
-  const company = await prisma.practiceCompany.findUnique({
-    where: { id },
-    select: { id: true, userId: true, companyName: true },
-  });
-  if (!company || company.userId !== user.id) notFound();
-
+  const company = await requireAccessibleCompany(user.id, id);
   const chat = await getResumeChat(user.id, id);
 
   return (

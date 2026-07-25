@@ -6,6 +6,10 @@ import {
   getCompanyWithRounds,
   getUserCompanyList,
 } from "@/lib/practice/cachedQueries";
+import {
+  getResumeChatFor,
+  requireAccessibleCompany,
+} from "@/lib/practice/access";
 import { tierProfile } from "@/lib/research/tierProfiles";
 import type { CompanyResearch } from "@/lib/research/companyResearch";
 import {
@@ -55,20 +59,21 @@ export default async function PracticeCompanyPage({
   const { id } = await params;
   const sessionUser = await requireUser(["practice"], "/practice/login");
 
+  // Access first: 404 unless this user may actually use the company. Only
+  // then load the (user-scoped) rounds and the rest of the page.
+  await requireAccessibleCompany(sessionUser.id, id);
+
   const [company, allCompanies, profileUser, resumeChat] = await Promise.all([
-    getCompanyWithRounds(id),
+    getCompanyWithRounds(id, sessionUser.id),
     getUserCompanyList(sessionUser.id),
     prisma.user.findUnique({
       where: { id: sessionUser.id },
       select: { course: true, cgpa: true },
     }),
-    prisma.practiceResumeChat.findUnique({
-      where: { companyId: id },
-      select: { id: true },
-    }),
+    getResumeChatFor(sessionUser.id, id),
   ]);
 
-  if (!company || company.userId !== sessionUser.id) notFound();
+  if (!company) notFound();
 
   const stats = aggregate(company.rounds);
   const profile = tierProfile(company.tier);

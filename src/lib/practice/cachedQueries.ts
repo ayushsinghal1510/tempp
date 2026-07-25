@@ -36,18 +36,33 @@ function reviveDates<T>(value: T): T {
   return value;
 }
 
-/** Every company + its rounds/turns (topics only) for a user — dashboard & companies list. */
+/**
+ * Every company this student may use, with THEIR rounds — dashboard and
+ * companies list.
+ *
+ * Two ways in: they registered it themselves, or an educator assigned it
+ * (and has published it — a draft is still being reviewed). Rounds and
+ * assignments are both filtered to this user, so a shared company shows the
+ * student only their own history.
+ */
 export async function getUserCompaniesWithRounds(userId: string) {
   const result = await unstable_cache(
     () =>
       prisma.practiceCompany.findMany({
-        where: { userId },
+        where: {
+          OR: [
+            { userId },
+            { status: "published", assignments: { some: { userId } } },
+          ],
+        },
         orderBy: { createdAt: "desc" },
         include: {
           rounds: {
+            where: { userId },
             include: { turns: { select: { topics: true } } },
             orderBy: { createdAt: "asc" },
           },
+          assignments: { where: { userId }, take: 1 },
         },
         relationLoadStrategy: "join",
       }),
@@ -79,7 +94,12 @@ export function getUserCompanyList(userId: string) {
   return unstable_cache(
     () =>
       prisma.practiceCompany.findMany({
-        where: { userId },
+        where: {
+          OR: [
+            { userId },
+            { status: "published", assignments: { some: { userId } } },
+          ],
+        },
         orderBy: { createdAt: "desc" },
         select: { id: true, companyName: true },
       }),
@@ -88,22 +108,34 @@ export function getUserCompanyList(userId: string) {
   )();
 }
 
-/** One company + its rounds/turns (topics only) — company detail page. */
-export async function getCompanyWithRounds(companyId: string) {
+/**
+ * One company + THIS user's rounds/turns (topics only) — company detail page.
+ *
+ * The rounds are scoped by userId, not just companyId: a company is no longer
+ * necessarily private to one student, so an unscoped include would show a
+ * student every other student's sessions on a shared company. The educator's
+ * roll-up uses a separate, deliberately unscoped query rather than widening
+ * this one.
+ */
+export async function getCompanyWithRounds(companyId: string, userId: string) {
   const result = await unstable_cache(
     () =>
       prisma.practiceCompany.findUnique({
         where: { id: companyId },
         include: {
           rounds: {
+            where: { userId },
             include: { turns: { select: { topics: true } } },
             orderBy: { createdAt: "asc" },
           },
         },
         relationLoadStrategy: "join",
       }),
-    [`practice-company-${companyId}`],
-    { tags: [companyTag(companyId)], revalidate: TTL_SECONDS },
+    [`practice-company-${companyId}-${userId}`],
+    {
+      tags: [companyTag(companyId), userTag(userId)],
+      revalidate: TTL_SECONDS,
+    },
   )();
   return reviveDates(result);
 }

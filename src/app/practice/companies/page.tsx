@@ -4,6 +4,7 @@ import PracticeHeader from "@/components/practice/PracticeHeader";
 import CompaniesTable, {
   type CompanyRow,
 } from "@/components/practice/CompaniesTable";
+import JoinClassForm from "@/components/practice/JoinClassForm";
 import { aggregate } from "@/lib/practice/metrics";
 import CompanyForm from "./CompanyForm";
 
@@ -15,6 +16,7 @@ export default async function PracticeCompaniesPage() {
 
   const rows: CompanyRow[] = companies.map((c) => {
     const stats = aggregate(c.rounds);
+    const assignment = c.assignments[0];
     return {
       id: c.id,
       companyName: c.companyName,
@@ -25,6 +27,14 @@ export default async function PracticeCompaniesPage() {
       bestTopic: stats.bestTopic,
       worstTopic: stats.worstTopic,
       adoptionRate: stats.adoptionRate,
+      assigned: assignment
+        ? {
+            mode: assignment.mode,
+            dueDate: assignment.dueDate
+              ? new Date(assignment.dueDate).toISOString()
+              : null,
+          }
+        : null,
     };
   });
 
@@ -37,10 +47,14 @@ export default async function PracticeCompaniesPage() {
           <h1 className="text-xl font-bold text-ink">Your companies</h1>
           <p className="mt-1 text-sm text-muted">
             Register a company once, then run as many practice sessions
-            against it as you like.
+            against it as you like. Companies your educator assigns show up
+            here too.
           </p>
           <div className="mt-4 max-w-md">
             <CompanyForm />
+          </div>
+          <div className="mt-4">
+            <JoinClassForm />
           </div>
         </section>
 

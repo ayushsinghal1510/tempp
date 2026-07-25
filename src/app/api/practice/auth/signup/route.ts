@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { setSessionCookie, homePathForRole } from "@/lib/auth/session";
+import { joinGroupByCode } from "@/lib/practice/joinGroup";
 
 const DEGREES = [
   "btech",
@@ -21,6 +22,8 @@ const schema = z.object({
   password: z.string().min(8),
   course: z.enum(DEGREES).optional(),
   cgpa: z.number().min(0).max(10).optional(),
+  // Optional: enrols the new account in an educator's class straight away.
+  joinCode: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -52,6 +55,17 @@ export async function POST(req: Request) {
     },
   });
 
+  // A bad class code must never cost the student their new account — the
+  // signup has already succeeded by here, so a failed join is reported
+  // alongside it rather than thrown.
+  let joinedGroup: string | null = null;
+  let joinError: string | null = null;
+  if (parsed.data.joinCode?.trim()) {
+    const outcome = await joinGroupByCode(user.id, parsed.data.joinCode);
+    if (outcome.ok) joinedGroup = outcome.groupName;
+    else joinError = outcome.error;
+  }
+
   const sessionUser = {
     id: user.id,
     role: user.role,
@@ -63,6 +77,8 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     user: sessionUser,
+    joinedGroup,
+    joinError,
     redirect: homePathForRole(user.role),
   });
 }

@@ -88,5 +88,7 @@ export function homePathForRole(role: Role): string {
       return "/student";
     case "practice":
       return "/practice";
+    case "practice_admin":
+      return "/educator";
   }
 }

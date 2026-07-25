@@ -9,6 +9,7 @@ const ROLE_HOME: Record<Role, string> = {
   // Not covered by this middleware's matcher (see below) — practice pages
   // guard themselves via requireUser. Listed only so this stays exhaustive.
   practice: "/practice",
+  practice_admin: "/educator",
 };
 
 // Each role may only enter its own section.
@@ -19,15 +20,23 @@ export async function proxy(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifySessionToken(token) : null;
 
+  // The educator section has its own sign-in page (the shared /login is
+  // disabled in practice-only mode), so it must stay reachable logged-out.
+  const isEducatorLogin = pathname === "/educator/login";
+
   const isProtected =
-    pathname.startsWith("/super") ||
-    pathname.startsWith("/admin") ||
-    pathname.startsWith("/student");
+    !isEducatorLogin &&
+    (pathname.startsWith("/super") ||
+      pathname.startsWith("/admin") ||
+      pathname.startsWith("/student") ||
+      pathname.startsWith("/educator"));
 
   if (isProtected) {
     if (!user) {
       const url = req.nextUrl.clone();
-      url.pathname = "/login";
+      url.pathname = pathname.startsWith("/educator")
+        ? "/educator/login"
+        : "/login";
       url.searchParams.set("next", pathname);
       return NextResponse.redirect(url);
     }
@@ -41,7 +50,7 @@ export async function proxy(req: NextRequest) {
   }
 
   // Already logged in → skip the login page.
-  if (pathname === "/login" && user) {
+  if ((pathname === "/login" || isEducatorLogin) && user) {
     const url = req.nextUrl.clone();
     url.pathname = ROLE_HOME[user.role];
     url.search = "";
@@ -52,5 +61,11 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/super/:path*", "/admin/:path*", "/student/:path*", "/login"],
+  matcher: [
+    "/super/:path*",
+    "/admin/:path*",
+    "/student/:path*",
+    "/educator/:path*",
+    "/login",
+  ],
 };

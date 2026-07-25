@@ -5,6 +5,8 @@ import { revalidatePath, updateTag } from "next/cache";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth/session";
+import { getAccessibleCompany, getResumeChatFor } from "@/lib/practice/access";
+import { joinGroupByCode } from "@/lib/practice/joinGroup";
 import { researchCompany } from "@/lib/research/companyResearch";
 import { tierForSalary } from "@/lib/research/tierProfiles";
 import { userTag, companyTag, roundTag } from "@/lib/practice/cacheTags";
@@ -68,25 +70,63 @@ export async function createCompany(
   return { ok: true, companyId: company.id };
 }
 
+/**
+ * Enrol in an educator's class with a code they shared. Any companies the
+ * educator already assigned to that class become available immediately.
+ */
+export async function joinClass(
+  _prev: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  const user = await requireUser(["practice"], "/practice/login");
+
+  const outcome = await joinGroupByCode(
+    user.id,
+    String(formData.get("joinCode") ?? ""),
+  );
+  if (!outcome.ok) return { error: outcome.error };
+
+  updateTag(userTag(user.id));
+  revalidatePath("/practice");
+  revalidatePath("/practice/companies");
+  return { ok: true };
+}
+
 /** Start a new practice session under an existing company. */
 export async function createSession(companyId: string): Promise<never> {
   const user = await requireUser(["practice"], "/practice/login");
 
-  const company = await prisma.practiceCompany.findUnique({
-    where: { id: companyId },
-  });
-  if (!company || company.userId !== user.id) {
+  const company = await getAccessibleCompany(user.id, companyId);
+  if (!company) {
     throw new Error("Company not found.");
   }
 
   // Resume-grounded interviews: the resume has to exist before a session can
   // start at all — send them to upload it first instead of creating a round.
-  const resumeChat = await prisma.practiceResumeChat.findUnique({
-    where: { companyId },
-    select: { id: true },
-  });
+  // Per-student, not per-company: on a shared company each student uploads
+  // their own.
+  const resumeChat = await getResumeChatFor(user.id, companyId);
   if (!resumeChat) {
     redirect(`/practice/companies/${companyId}/resume-chat`);
+  }
+
+  // Org-owned companies draw on the educator's contracted session pool. Check
+  // and increment together so two tabs can't both slip through on the last
+  // seat — the conditional updateMany returns 0 when the pool is already
+  // spent. Self-registered companies are unmetered, as before.
+  if (company.orgId) {
+    const { count } = await prisma.practiceOrg.updateMany({
+      where: {
+        id: company.orgId,
+        sessionsUsed: { lt: prisma.practiceOrg.fields.sessionsAllotted },
+      },
+      data: { sessionsUsed: { increment: 1 } },
+    });
+    if (count === 0) {
+      throw new Error(
+        "Your class has used all of its practice sessions. Ask your educator to top up.",
+      );
+    }
   }
 
   const round = await prisma.practiceRound.create({
@@ -133,6 +173,13 @@ export async function startPracticeRound(
  */
 export async function completePracticeRound(
   roundId: string,
+  /**
+   * True when the browser is about to push a recording for this round in the
+   * background. Recorded here, before the student navigates away, so the
+   * results page knows to wait for a file rather than concluding there is
+   * none — the upload itself reports `ready` when it lands.
+   */
+  recordingExpected = false,
 ): Promise<ActionResult> {
   const user = await requireUser(["practice"], "/practice/login");
 
@@ -146,7 +193,15 @@ export async function completePracticeRound(
   if (round.status !== "completed") {
     await prisma.practiceRound.update({
       where: { id: roundId },
-      data: { status: "completed", completedAt: new Date() },
+      data: {
+        status: "completed",
+        completedAt: new Date(),
+        // Never downgrade: a fast upload can beat this write, and clobbering
+        // `ready` back to `processing` would leave the page polling forever.
+        ...(recordingExpected && round.recordingStatus !== "ready"
+          ? { recordingStatus: "processing" as const }
+          : {}),
+      },
     });
     updateTag(userTag(user.id));
     updateTag(roundTag(roundId));

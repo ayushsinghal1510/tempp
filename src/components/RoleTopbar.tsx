@@ -5,9 +5,10 @@ const ROLE_LABEL: Record<SessionUser["role"], string> = {
   super_admin: "Super Admin",
   admin: "Placement Officer",
   student: "Student",
-  // Not rendered here — practice users have their own page shell — listed
+  // Not rendered here — practice students have their own page shell — listed
   // only so this stays exhaustive against the Role enum.
   practice: "Practice",
+  practice_admin: "Educator",
 };
 
 export default function RoleTopbar({

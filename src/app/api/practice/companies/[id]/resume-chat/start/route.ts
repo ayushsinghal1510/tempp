@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { PDFParse } from "pdf-parse";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth/session";
+import { getAccessibleCompany, getResumeChatFor } from "@/lib/practice/access";
 
 export const runtime = "nodejs";
 
@@ -19,21 +20,15 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const company = await prisma.practiceCompany.findUnique({
-    where: { id: companyId },
-    select: { userId: true },
-  });
-  if (!company || company.userId !== user.id) {
+  const company = await getAccessibleCompany(user.id, companyId);
+  if (!company) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Resumable-only: if a chat already exists for this company, this is a
-  // harmless no-op rather than an error — never overwrite an existing resume
+  // Resumable-only: if this user already has a chat for this company, this is
+  // a harmless no-op rather than an error — never overwrite an existing resume
   // or wipe message history just because the upload form got submitted again.
-  const existing = await prisma.practiceResumeChat.findUnique({
-    where: { companyId },
-    select: { id: true },
-  });
+  const existing = await getResumeChatFor(user.id, companyId);
   if (existing) {
     return NextResponse.json({ ok: true });
   }

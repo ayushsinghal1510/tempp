@@ -8,7 +8,7 @@ import RoundResultsRecording from "@/components/practice/RoundResultsRecording";
 import { type TopicKink } from "@/components/charts/bklit/TopicsTimeline";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
 import TopicBars from "@/components/charts/bklit/TopicBars";
-import { findRecording } from "@/lib/practice/recordingStorage";
+import { resolveRecording } from "@/lib/practice/recordingStorage";
 import {
   TOPIC_META,
   TYPE_BADGE,
@@ -121,7 +121,14 @@ export default async function PracticeRoundResultsPage({
     maxTurnSec,
     1,
   );
-  const recording = await findRecording(id);
+  // Not a bare file check any more: the student is released from the call
+  // before their recording finishes uploading, so "no file yet" and "there
+  // will never be a file" are different answers and read differently below.
+  const recording = await resolveRecording(
+    id,
+    round.recordingStatus,
+    round.completedAt,
+  );
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
@@ -171,24 +178,21 @@ export default async function PracticeRoundResultsPage({
             Posture, Framing, Approach, Numbers, Confidence, Example — scored
             0–10, turn by turn.
           </p>
-          {hasScores ? (
-            <div className="mt-4">
-              <RoundResultsRecording
-                roundId={id}
-                hasRecording={recording !== null}
-                series={series}
-                kinks={kinks}
-                turnSeconds={turnSeconds}
-                fallbackDurationSec={fallbackDurationSec}
-                max={10}
-              />
-            </div>
-          ) : (
-            <p className="py-10 text-center text-sm text-muted">
-              No scored turns yet — data lands here once the webhook receives
-              real turns from the call.
-            </p>
-          )}
+          {/* Rendered even with no scored turns: this is where the "analysing
+              your video" notice lives, and a student who walks straight here
+              from the call is exactly the person who needs to see it. The
+              chart inside handles the empty and single-turn cases itself. */}
+          <div className="mt-4">
+            <RoundResultsRecording
+              roundId={id}
+              recordingState={recording.state}
+              series={series}
+              kinks={kinks}
+              turnSeconds={turnSeconds}
+              fallbackDurationSec={fallbackDurationSec}
+              max={10}
+            />
+          </div>
         </section>
 
         {hasScores && (

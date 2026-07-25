@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsx *)",
+      "Bash(./node_modules/.bin/tsx scripts/verify-practice-access.ts)",
+      "Bash(npm install *)",
+      "Bash(npx prisma *)",
+      "Bash(npx tsc *)",
+      "Bash(grep -n 'deleteMany\\\\|$executeRaw' prisma/seed.ts)",
+      "Bash(./node_modules/.bin/tsx scripts/create-educator.ts \"Demo Institute\" educator@demo.edu password123 \"2027 CSE-A\")",
+      "Bash(npm run *)",
+      "Bash(PORT=3311 npm run start -- -H 127.0.0.1 -p 3311)",
+      "Bash(curl -s -o /dev/null -w '%{http_code} -> %{redirect_url}\\\\n' http://127.0.0.1:3311/educator)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}\\\\n' http://127.0.0.1:3311/educator/login)",
+      "Bash(curl -s -c /tmp/claude-1000/-teamspace-studios-this-studio-tempp/0192fb60-8156-4dbb-8839-ab999e91b119/scratchpad/edu.txt -X POST http://127.0.0.1:3311/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"educator@demo.edu\",\"password\":\"password123\"}')",
+      "Bash(./node_modules/.bin/tsx /tmp/claude-1000/-teamspace-studios-this-studio-tempp/0192fb60-8156-4dbb-8839-ab999e91b119/scratchpad/gid.ts)",
+      "Bash(curl -s -b /tmp/claude-1000/-teamspace-studios-this-studio-tempp/0192fb60-8156-4dbb-8839-ab999e91b119/scratchpad/stu.txt http://127.0.0.1:3311/practice/companies/smoketest-company)",
+      "Bash(curl -s -o /dev/null -w '  %{http_code}\\\\n' -b /tmp/claude-1000/-teamspace-studios-this-studio-tempp/0192fb60-8156-4dbb-8839-ab999e91b119/scratchpad/stu.txt http://127.0.0.1:3311/practice/companies/definitely-does-not-exist)",
+      "Bash(curl -s -o /dev/null -w '  %{http_code}\\\\n' -b /tmp/claude-1000/-teamspace-studios-this-studio-tempp/0192fb60-8156-4dbb-8839-ab999e91b119/scratchpad/stu.txt http://127.0.0.1:3311/no-such-page-at-all)",
+      "Bash(curl -s -b /tmp/claude-1000/-teamspace-studios-this-studio-tempp/0192fb60-8156-4dbb-8839-ab999e91b119/scratchpad/stu.txt http://127.0.0.1:3311/practice/companies)",
+      "Bash(pkill -f \"next start\")",
+      "Bash(pkill -f \"next-server\")",
+      "Bash(./node_modules/.bin/prisma migrate *)",
+      "Read(//system/conda/node/nvm/versions/node/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(python3 *)"
+    ]
+  }
+}

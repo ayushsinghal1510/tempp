@@ -1,14 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import TopicsTimeline, {
   type TopicKink,
   type TopicSeries,
 } from "@/components/charts/bklit/TopicsTimeline";
 
+export type RecordingState = "ready" | "processing" | "failed" | "none";
+
+/** Slow enough to be free, fast enough that nobody sits staring at it. */
+const POLL_MS = 4000;
+
 export default function RoundResultsRecording({
   roundId,
-  hasRecording,
+  recordingState,
   series,
   kinks,
   turnSeconds,
@@ -16,7 +21,7 @@ export default function RoundResultsRecording({
   max = 10,
 }: {
   roundId: string;
-  hasRecording: boolean;
+  recordingState: RecordingState;
   series: TopicSeries[];
   kinks: TopicKink[];
   turnSeconds: number[];
@@ -26,9 +31,62 @@ export default function RoundResultsRecording({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(fallbackDurationSec);
+  const [state, setState] = useState<RecordingState>(recordingState);
+
+  // The upload runs in whichever tab ran the interview, so this page can't
+  // observe it directly — it asks the server instead. Only while genuinely
+  // waiting: a ready or absent recording never polls.
+  useEffect(() => {
+    if (state !== "processing") return;
+    let cancelled = false;
+
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/practice/rounds/${roundId}/recording/status`,
+          { cache: "no-store" },
+        );
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as { state?: RecordingState };
+        if (body.state && body.state !== "processing" && !cancelled) {
+          setState(body.state);
+        }
+      } catch {
+        // A transient failure is not an answer — keep waiting.
+      }
+    }, POLL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [state, roundId]);
+
+  const hasRecording = state === "ready";
 
   return (
     <div className="space-y-4">
+      {state === "processing" && (
+        <div className="flex items-center gap-3 rounded-lg border border-line bg-canvas px-4 py-3.5 text-sm text-muted">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-line border-t-brand" />
+          <span>
+            <span className="font-medium text-ink">
+              Analysing your video for analytics…
+            </span>{" "}
+            Your scores below are already final — the replay appears here on its
+            own once the video finishes processing.
+          </span>
+        </div>
+      )}
+
+      {state === "failed" && (
+        <p className="rounded-lg border border-line bg-canvas px-4 py-3 text-sm text-muted">
+          The video from this session didn&apos;t finish uploading, so there
+          isn&apos;t a replay. Your scores and coaching moments below are
+          unaffected.
+        </p>
+      )}
+
       {hasRecording && (
         <video
           ref={videoRef}

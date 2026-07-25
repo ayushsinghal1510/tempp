@@ -22,6 +22,39 @@ enum Role {
   admin
   student
   practice
+  // Educator on the practice track — owns a PracticeOrg, creates companies
+  // and assigns them to groups of `practice` students. Distinct from `admin`,
+  // which is the university-side placement officer bound to a University and
+  // the Cohort/Student tree.
+  practice_admin
+}
+
+// Whether the educator may see the transcript + recording of the rounds a
+// student runs under an assignment, or only the scores and analytics.
+// Chosen per assignment so a batch can mix private drills with graded
+// assessments; the student is shown which before they start.
+enum PracticeAssignmentMode {
+  drill // scores + analytics only
+  assessment // + transcript and recording
+}
+
+// Educator-created companies start `draft` so the research can be reviewed
+// and edited before students see it. Self-serve companies are created
+// `published` directly, preserving the existing student flow.
+enum PracticeCompanyStatus {
+  draft
+  published
+}
+
+// Where a session's webcam recording is in its journey from the browser to
+// disk. The student is released from the call the moment it ends, so the
+// results page needs to distinguish "there was never a recording" from
+// "it's still on its way" — otherwise a slow upload reads as a broken replay.
+enum RecordingStatus {
+  none // no recording was captured (mic-only session, unsupported browser)
+  processing // the upload is in flight
+  ready // on disk and playable
+  failed // the upload errored or never arrived
 }
 
 enum CohortStatus {
@@ -91,29 +124,38 @@ model University {
 }
 
 model User {
-  id           String  @id @default(cuid())
+  id            String  @id @default(cuid())
   // Nullable: super_admin (platform operator) belongs to no university.
-  universityId String? @map("university_id")
-  role         Role
-  name         String
-  email        String  @unique
-  passwordHash String  @map("password_hash")
+  universityId  String? @map("university_id")
+  // Populated only for role = practice_admin — the educator's institute.
+  // Practice *students* are not attached to an org directly; their link is
+  // their PracticeMember rows, so a student can leave a class without their
+  // account or their self-created companies changing hands.
+  practiceOrgId String? @map("practice_org_id")
+  role          Role
+  name          String
+  email         String  @unique
+  passwordHash  String  @map("password_hash")
   // Populated only for role = practice — the student's own degree + CGPA,
   // used to key the expectation matrix (course focus areas on the drive
   // briefing page). Null for every other role, and for practice accounts
   // created before this field existed.
-  course       Degree?
-  cgpa         Float?
+  course        Degree?
+  cgpa          Float?
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  university         University?          @relation(fields: [universityId], references: [id], onDelete: SetNull)
-  student            Student? // populated only when role = student
-  practiceRounds     PracticeRound[] // populated only when role = practice
-  practiceCompanies  PracticeCompany[] // populated only when role = practice
-  practiceResumeChat PracticeResumeChat[] // populated only when role = practice
+  university          University?          @relation(fields: [universityId], references: [id], onDelete: SetNull)
+  practiceOrg         PracticeOrg?         @relation(fields: [practiceOrgId], references: [id], onDelete: SetNull)
+  student             Student? // populated only when role = student
+  practiceRounds      PracticeRound[] // populated only when role = practice
+  practiceCompanies   PracticeCompany[] // populated only when role = practice
+  practiceResumeChat  PracticeResumeChat[] // populated only when role = practice
+  practiceMemberships PracticeMember[] // populated only when role = practice
+  practiceAssignments PracticeAssignment[] // populated only when role = practice
 
   @@index([universityId])
+  @@index([practiceOrgId])
   @@map("users")
 }
 
@@ -314,22 +356,106 @@ model Recording {
 // A company the student has self-registered for practice — created once,
 // reused across any number of PracticeRound "sessions" under it. Research
 // runs a single time at creation, not per session.
-model PracticeCompany {
-  id              String   @id @default(cuid())
-  userId          String   @map("user_id")
-  companyName     String   @map("company_name")
-  jobTitle        String?  @map("job_title")
-  jobDescription  String?  @map("job_description")
-  salaryLpa       Float?   @map("salary_lpa")
-  tier            Tier? // company salary band, derived from salaryLpa
-  companyResearch Json?    @map("company_research")
-  createdAt       DateTime @default(now()) @map("created_at")
+// An educator's institute — the practice-track counterpart to University.
+// Carries the session quota for the same reason University does: every round
+// is a live voice call plus (once per company) a Groq research call.
+model PracticeOrg {
+  id               String   @id @default(cuid())
+  name             String
+  sessionsAllotted Int      @default(0) @map("sessions_allotted")
+  sessionsUsed     Int      @default(0) @map("sessions_used")
+  createdAt        DateTime @default(now()) @map("created_at")
 
-  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rounds     PracticeRound[]
-  resumeChat PracticeResumeChat?
+  admins    User[]
+  groups    PracticeGroup[]
+  companies PracticeCompany[]
+
+  @@map("practice_orgs")
+}
+
+// A class / batch. Students self-enrol with `joinCode` rather than being
+// bulk-imported, so they keep their own account and their course/CGPA.
+model PracticeGroup {
+  id        String   @id @default(cuid())
+  orgId     String   @map("org_id")
+  name      String
+  joinCode  String   @unique @map("join_code")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  org         PracticeOrg          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members     PracticeMember[]
+  assignments PracticeAssignment[]
+
+  @@index([orgId])
+  @@map("practice_groups")
+}
+
+model PracticeMember {
+  id       String   @id @default(cuid())
+  groupId  String   @map("group_id")
+  userId   String   @map("user_id")
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  group PracticeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("practice_members")
+}
+
+// One row per (company, student) the educator has assigned. This — not
+// PracticeCompany.userId — is what grants an assigned student access to a
+// shared company (see src/lib/practice/access.ts).
+model PracticeAssignment {
+  id          String                 @id @default(cuid())
+  companyId   String                 @map("company_id")
+  userId      String                 @map("user_id")
+  // Provenance: which group the assignment came from, when it was assigned
+  // in bulk. Null for an individually-assigned student.
+  groupId     String?                @map("group_id")
+  mode        PracticeAssignmentMode @default(drill)
+  dueDate     DateTime?              @map("due_date")
+  minSessions Int                    @default(1) @map("min_sessions")
+  createdAt   DateTime               @default(now()) @map("created_at")
+
+  company PracticeCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   PracticeGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, userId])
+  @@index([userId])
+  @@index([groupId])
+  @@map("practice_assignments")
+}
+
+model PracticeCompany {
+  id              String                @id @default(cuid())
+  // Exactly one of userId / orgId is set. userId → a student registered this
+  // for themselves (the original self-serve flow, still supported). orgId →
+  // an educator created it for a batch, and access comes from
+  // PracticeAssignment rather than ownership.
+  userId          String?               @map("user_id")
+  orgId           String?               @map("org_id")
+  status          PracticeCompanyStatus @default(published)
+  companyName     String                @map("company_name")
+  jobTitle        String?               @map("job_title")
+  jobDescription  String?               @map("job_description")
+  salaryLpa       Float?                @map("salary_lpa")
+  tier            Tier? // company salary band, derived from salaryLpa
+  companyResearch Json?                 @map("company_research")
+  createdAt       DateTime              @default(now()) @map("created_at")
+
+  user        User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org         PracticeOrg?         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  rounds      PracticeRound[]
+  // One per student, not one per company — a shared company carries a
+  // separate resume chat for every student assigned to it.
+  resumeChats PracticeResumeChat[]
+  assignments PracticeAssignment[]
 
   @@index([userId])
+  @@index([orgId])
   @@map("practice_companies")
 }
 
@@ -338,10 +464,16 @@ model PracticeCompany {
 // constraint below is what enforces "resume the same thread, never start a
 // second one": callers check for an existing row and either load it or show
 // the upload screen, never create a second row for the same pair.
+//
+// The constraint is on the PAIR, not on companyId alone: a company can be
+// shared across a whole batch, and each student uploads their own resume
+// against it. Every read must be scoped by both ids — the resume text is
+// injected verbatim into the live interviewer's prompt, so a company-only
+// lookup would interview one student about another's projects.
 model PracticeResumeChat {
   id         String   @id @default(cuid())
   userId     String   @map("user_id")
-  companyId  String   @unique @map("company_id")
+  companyId  String   @map("company_id")
   resumeText String   @map("resume_text")
   // Full ai-sdk UIMessage[] transcript, stored verbatim.
   messages   Json     @default("[]")
@@ -351,6 +483,8 @@ model PracticeResumeChat {
   user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   company PracticeCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@unique([companyId, userId])
+  @@index([userId])
   @@map("practice_resume_chats")
 }
 
@@ -362,6 +496,8 @@ model PracticeRound {
   startedAt    DateTime?   @map("started_at")
   completedAt  DateTime?   @map("completed_at")
   createdAt    DateTime    @default(now()) @map("created_at")
+
+  recordingStatus RecordingStatus @default(none) @map("recording_status")
 
   // A session now always belongs to a PracticeCompany going forward; nullable
   // only because rows created before this model existed have nothing to

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { topicLabel } from "@/lib/practice/metrics";
 import type { Tier } from "@/lib/research/tierProfiles";
+import Select from "@/components/ui/Select";
 
 export type CompanyRow = {
   id: string;
@@ -15,6 +16,8 @@ export type CompanyRow = {
   bestTopic: string | null;
   worstTopic: string | null;
   adoptionRate: number | null;
+  /** Set when an educator assigned this; null when the student added it. */
+  assigned: { mode: "drill" | "assessment"; dueDate: string | null } | null;
 };
 
 const TIER_LABEL: Record<Tier, string> = {
@@ -52,16 +55,18 @@ export default function CompaniesTable({
           placeholder="Search companies…"
           className="w-full max-w-xs rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-brand sm:w-auto"
         />
-        <select
+        <Select
+          size="sm"
           value={tierFilter}
           onChange={(e) => setTierFilter(e.target.value as "all" | Tier)}
-          className="rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-brand"
+          className="w-auto min-w-[8.5rem]"
+          aria-label="Filter by tier"
         >
           <option value="all">All tiers</option>
           <option value="tier_1">Tier 1</option>
           <option value="tier_2">Tier 2</option>
           <option value="tier_3">Tier 3</option>
-        </select>
+        </Select>
         <span className="text-xs text-muted">
           {filtered.length} of {companies.length}
         </span>
@@ -91,10 +96,34 @@ export default function CompaniesTable({
               {filtered.map((c) => (
                 <tr key={c.id} className="border-t border-line">
                   <td className="px-4 py-2.5">
-                    <div className="font-medium text-ink">{c.companyName}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-ink">
+                        {c.companyName}
+                      </span>
+                      {c.assigned && (
+                        <span
+                          title={
+                            c.assigned.mode === "assessment"
+                              ? "Graded — your educator can see the transcript and recording."
+                              : "Private drill — your educator sees your scores only, never the transcript or recording."
+                          }
+                          className={`rounded-md px-2 py-0.5 text-xs font-medium ${
+                            c.assigned.mode === "assessment"
+                              ? "bg-warning-soft text-warning"
+                              : "bg-brand-soft text-brand"
+                          }`}
+                        >
+                          {c.assigned.mode === "assessment"
+                            ? "Assessment"
+                            : "Assigned"}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-muted">
                       {c.jobTitle} · {c.totalSessions} session
                       {c.totalSessions === 1 ? "" : "s"}
+                      {c.assigned?.dueDate &&
+                        ` · due ${new Date(c.assigned.dueDate).toLocaleDateString()}`}
                     </div>
                   </td>
                   <td className="px-4 py-2.5">

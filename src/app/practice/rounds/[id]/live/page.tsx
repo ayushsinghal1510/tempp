@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import InterviewRoom from "@/components/interview/InterviewRoom";
 import { prisma } from "@/lib/db";
+import { getResumeChatFor } from "@/lib/practice/access";
 import { tierProfile } from "@/lib/research/tierProfiles";
 import type { CompanyResearch } from "@/lib/research/companyResearch";
 import type { PracticeDrive } from "@/lib/voice/practiceCustoms";
@@ -25,11 +26,11 @@ export default async function PracticeInterviewLivePage({
   if (!round || round.userId !== user.id) notFound();
   if (round.status === "completed") notFound();
 
+  // Scoped by user as well as company — this text goes straight into the
+  // interviewer's system prompt, so a company-only lookup would hand one
+  // student another student's resume once companies are shared.
   const resumeChat = round.companyId
-    ? await prisma.practiceResumeChat.findUnique({
-        where: { companyId: round.companyId },
-        select: { resumeText: true },
-      })
+    ? await getResumeChatFor(round.userId, round.companyId)
     : null;
 
   const companyName = round.company?.companyName ?? round.companyName;

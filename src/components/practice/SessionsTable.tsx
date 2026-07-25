@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { topicLabel } from "@/lib/practice/metrics";
+import Select from "@/components/ui/Select";
 
 export type SessionRow = {
   id: string;
@@ -71,10 +72,12 @@ export default function SessionsTable({
           className="w-full max-w-xs rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-brand sm:w-auto"
         />
         {showCompanyColumn && companyOptions.length > 1 && (
-          <select
+          <Select
+            size="sm"
             value={companyFilter}
             onChange={(e) => setCompanyFilter(e.target.value)}
-            className="rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-brand"
+            className="w-auto min-w-[11rem]"
+            aria-label="Filter by company"
           >
             <option value="all">All companies</option>
             {companyOptions.map(([id, name]) => (
@@ -82,19 +85,21 @@ export default function SessionsTable({
                 {name}
               </option>
             ))}
-          </select>
+          </Select>
         )}
-        <select
+        <Select
+          size="sm"
           value={statusFilter}
           onChange={(e) =>
             setStatusFilter(e.target.value as "all" | "completed" | "in_progress")
           }
-          className="rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-brand"
+          className="w-auto min-w-[9.5rem]"
+          aria-label="Filter by status"
         >
           <option value="all">All statuses</option>
           <option value="completed">Completed</option>
           <option value="in_progress">In progress</option>
-        </select>
+        </Select>
         <span className="text-xs text-muted">
           {filtered.length} of {sessions.length}
         </span>

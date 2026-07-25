@@ -3,6 +3,7 @@ import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import { groq } from "@ai-sdk/groq";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth/session";
+import { getAccessibleCompany } from "@/lib/practice/access";
 import type { CompanyResearch } from "@/lib/research/companyResearch";
 
 export const runtime = "nodejs";
@@ -44,23 +45,15 @@ export async function POST(
   }
 
   const [chat, company, profile] = await Promise.all([
-    prisma.practiceResumeChat.findUnique({ where: { companyId } }),
-    prisma.practiceCompany.findUnique({
-      where: { id: companyId },
-      select: {
-        userId: true,
-        companyName: true,
-        jobTitle: true,
-        companyResearch: true,
-      },
-    }),
+    prisma.practiceResumeChat.findFirst({ where: { companyId, userId: user.id } }),
+    getAccessibleCompany(user.id, companyId),
     prisma.user.findUnique({
       where: { id: user.id },
       select: { name: true, course: true, cgpa: true },
     }),
   ]);
 
-  if (!chat || !company || company.userId !== user.id || chat.userId !== user.id) {
+  if (!chat || !company) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -87,8 +80,9 @@ ${chat.resumeText}`;
     messages: await convertToModelMessages(messages),
     maxOutputTokens: 700,
     onFinish: async ({ text }) => {
+      // By row id, not companyId — a company can carry one chat per student.
       await prisma.practiceResumeChat.update({
-        where: { companyId },
+        where: { id: chat.id },
         data: { messages: [...messages, assistantMessage(text)] },
       });
     },
