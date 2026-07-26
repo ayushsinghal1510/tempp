@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { topicLabel } from "@/lib/practice/metrics";
 import type { TriageRow } from "@/lib/practice/educatorMetrics";
+import type { TopicMeta } from "@/lib/practice/topics";
 
-export default function TriageTable({ rows }: { rows: TriageRow[] }) {
+export default function TriageTable({
+  rows,
+  topics,
+}: {
+  rows: TriageRow[];
+  topics: TopicMeta[];
+}) {
   if (rows.length === 0) {
     return (
       <p className="rounded-lg border border-line p-6 text-center text-sm text-muted">
@@ -39,7 +46,7 @@ export default function TriageTable({ rows }: { rows: TriageRow[] }) {
                       title={`Raised ${s.repeated} time${s.repeated === 1 ? "" : "s"}, never adopted`}
                       className="rounded-md bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger"
                     >
-                      {topicLabel(s.topicKey)} ×{s.repeated}
+                      {topicLabel(s.topicKey, topics)} ×{s.repeated}
                     </span>
                   ))}
                 </div>

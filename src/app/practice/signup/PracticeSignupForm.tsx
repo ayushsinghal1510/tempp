@@ -5,6 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DEGREES, DEGREE_LABEL } from "@/lib/research/expectationMatrix";
 import Select from "@/components/ui/Select";
+import {
+  TENANTS,
+  tenantForEmail,
+  acceptedDomains,
+} from "@/lib/tenants/config";
 
 export default function PracticeSignupForm() {
   const router = useRouter();
@@ -13,8 +18,21 @@ export default function PracticeSignupForm() {
   const [password, setPassword] = useState("");
   const [course, setCourse] = useState("");
   const [cgpa, setCgpa] = useState("");
+  const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The account is created even when the class code fails, so this is a
+  // warning on a SUCCEEDED signup, not an error — kept separate from `error`
+  // so it can't read as "your account wasn't created".
+  const [joinWarning, setJoinWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Which product this address belongs to, resolved as they type. Course/CGPA
+  // key the (engineering-shaped) expectation matrix, so they only make sense
+  // on a tenant that uses it — no point collecting a B.Tech from a medical
+  // student. Null until the domain is recognised, which is also the signal
+  // that the server is going to reject this address.
+  const tenant = tenantForEmail(email);
+  const showCourse = tenant ? TENANTS[tenant].features.courseField : false;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,13 +46,23 @@ export default function PracticeSignupForm() {
           name,
           email,
           password,
-          course: course || undefined,
-          cgpa: cgpa ? Number(cgpa) : undefined,
+          course: showCourse && course ? course : undefined,
+          cgpa: showCourse && cgpa ? Number(cgpa) : undefined,
+          joinCode: joinCode.trim() || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "Something went wrong");
+        return;
+      }
+      // A bad class code must not silently swallow itself: the signup already
+      // succeeded, so surface it and let them go on rather than dumping them
+      // on an empty dashboard wondering where their work is.
+      if (data.joinError) {
+        setJoinWarning(
+          `Your account is ready, but that class code didn't work: ${data.joinError} You can enter it again from your dashboard.`,
+        );
         return;
       }
       router.push(data.redirect ?? "/practice");
@@ -75,8 +103,13 @@ export default function PracticeSignupForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="mt-1 w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-          placeholder="you@example.com"
+          placeholder={`you${acceptedDomains()[0] ?? "@example.com"}`}
         />
+        {email.includes("@") && !tenant && (
+          <p className="mt-1 text-xs text-warning">
+            Sign-ups are limited to {acceptedDomains().join(" and ")} addresses.
+          </p>
+        )}
       </div>
       <div>
         <label className="block text-sm font-medium" htmlFor="password">
@@ -94,6 +127,7 @@ export default function PracticeSignupForm() {
           placeholder="At least 8 characters"
         />
       </div>
+      {showCourse && (
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium" htmlFor="course">
@@ -130,14 +164,53 @@ export default function PracticeSignupForm() {
           />
         </div>
       </div>
-      <p className="-mt-2 text-xs text-muted">
-        Optional — used to personalize what your drive briefing focuses on.
-      </p>
+      )}
+      {showCourse && (
+        <p className="-mt-2 text-xs text-muted">
+          Optional — used to personalize what your drive briefing focuses on.
+        </p>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium" htmlFor="joinCode">
+          Class code
+        </label>
+        <input
+          id="joinCode"
+          type="text"
+          autoCapitalize="characters"
+          value={joinCode}
+          onChange={(e) => setJoinCode(e.target.value)}
+          className="mt-1 w-full rounded-lg border border-line bg-card px-3 py-2 text-sm uppercase tracking-wider text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+          placeholder="From your educator"
+        />
+        <p className="mt-1 text-xs text-muted">
+          {tenant && !TENANTS[tenant].features.company
+            ? "Required to see anything — your educator sets your sessions."
+            : "Optional — joins you to your educator's class."}
+        </p>
+      </div>
 
       {error && (
         <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
           {error}
         </p>
+      )}
+
+      {joinWarning && (
+        <div className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+          {joinWarning}
+          <button
+            type="button"
+            onClick={() => {
+              router.push("/practice");
+              router.refresh();
+            }}
+            className="mt-1 block font-semibold underline"
+          >
+            Continue to your dashboard →
+          </button>
+        </div>
       )}
 
       <button

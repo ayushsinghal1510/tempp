@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { requireEducatorOrgId } from "@/lib/practice/access";
 import { prisma } from "@/lib/db";
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import { EDUCATOR_NAV } from "@/lib/nav";
+import { educatorNav } from "@/lib/nav";
 import JoinCode from "@/components/educator/JoinCode";
 import CohortAnalytics from "@/components/educator/CohortAnalytics";
 import KpiCard from "@/components/practice/KpiCard";
@@ -13,6 +13,7 @@ import {
   groupStudentRounds,
 } from "@/lib/practice/educatorQueries";
 import { assignmentFunnel } from "@/lib/practice/educatorMetrics";
+import { tenantConfig } from "@/lib/tenants/config";
 import { DEGREE_LABEL } from "@/lib/research/expectationMatrix";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,8 @@ export default async function EducatorGroupDetailPage({
   const { id } = await params;
   const user = await requireUser(["practice_admin"], "/educator/login");
   const orgId = await requireEducatorOrgId(user.id);
+  const tenant = tenantConfig(user.tenant);
+  const unitPlural = tenant.copy.unitPlural;
 
   const [group, students, funnelRows] = await Promise.all([
     prisma.practiceGroup.findUnique({
@@ -57,10 +60,10 @@ export default async function EducatorGroupDetailPage({
   // Scoped to the educator's own org — another org's group is simply absent.
   if (!group || group.orgId !== orgId) notFound();
 
-  const funnel = assignmentFunnel(funnelRows);
+  const funnel = assignmentFunnel(funnelRows, tenant.funnelStages);
 
   return (
-    <DashboardShell user={user} nav={EDUCATOR_NAV} title={group.name}>
+    <DashboardShell user={user} nav={educatorNav(unitPlural)} title={group.name}>
       <div className="space-y-6">
         <Link
           href="/educator/groups"
@@ -88,6 +91,7 @@ export default async function EducatorGroupDetailPage({
         <CohortAnalytics
           students={students}
           funnel={funnel}
+          tenant={tenant}
           scope="this class"
           extraKpis={
             <KpiCard

@@ -4,14 +4,16 @@ import { requireUser } from "@/lib/auth/session";
 import { roundVisibilityForEducator } from "@/lib/practice/access";
 import { prisma } from "@/lib/db";
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import { EDUCATOR_NAV } from "@/lib/nav";
+import { educatorNav } from "@/lib/nav";
 import {
-  TOPIC_META,
   TYPE_BADGE,
   TYPE_LABEL,
   type TopicDict,
 } from "@/lib/practice/topics";
 import { sessionDurationSeconds, topicLabel } from "@/lib/practice/metrics";
+import { tenantConfig } from "@/lib/tenants/config";
+import { clinicalRoundMetrics } from "@/lib/practice/clinicalMetrics";
+import ClinicalMetricsPanel from "@/components/practice/ClinicalMetricsPanel";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +25,8 @@ export default async function EducatorSessionPage({
 }) {
   const { id } = await params;
   const user = await requireUser(["practice_admin"], "/educator/login");
+  const unitPlural = tenantConfig(user.tenant).copy.unitPlural;
+  const { topics, track } = tenantConfig(user.tenant);
 
   // The single choke point for the drill/assessment split. Decided here,
   // before any turn content is read — not hidden in the markup below.
@@ -40,7 +44,7 @@ export default async function EducatorSessionPage({
   if (!round) notFound();
 
   const lastTurn = round.turns[round.turns.length - 1];
-  const latestScores = TOPIC_META.map((t) => {
+  const latestScores = topics.map((t) => {
     const dict = (lastTurn?.topics as Record<string, TopicDict> | null)?.[t.key];
     return typeof dict?.score === "number" ? dict.score : 0;
   });
@@ -48,10 +52,16 @@ export default async function EducatorSessionPage({
 
   const duration = sessionDurationSeconds(round);
 
+  // Word counts are analytics, so they sit above the visibility line with the
+  // scores. The individual jargon TERMS are transcript content and are gated
+  // on visibility.content below — same choke point as the transcript itself.
+  const clinical =
+    track === "clinical" ? clinicalRoundMetrics(round.turns) : null;
+
   return (
     <DashboardShell
       user={user}
-      nav={EDUCATOR_NAV}
+      nav={educatorNav(unitPlural)}
       title={`${round.user.name} — session`}
     >
       <div className="space-y-6">
@@ -79,7 +89,7 @@ export default async function EducatorSessionPage({
             <h3 className="font-semibold text-ink">Where they finished</h3>
             <div className="mt-4 max-w-md">
               <TopicRadar
-                axes={TOPIC_META.map((t) => t.label)}
+                axes={topics.map((t) => t.label)}
                 series={[
                   {
                     label: "Latest",
@@ -127,7 +137,7 @@ export default async function EducatorSessionPage({
                           "bg-canvas text-muted"
                         }`}
                       >
-                        {topicLabel(key)} ·{" "}
+                        {topicLabel(key, topics)} ·{" "}
                         {TYPE_LABEL[dict.type_ as string] ?? dict.type_}
                         {typeof dict.score === "number" &&
                           ` ${dict.score.toFixed(1)}`}
@@ -152,6 +162,22 @@ export default async function EducatorSessionPage({
             )}
           </div>
         </section>
+
+        {clinical && (
+          <section className="card p-6">
+            <h3 className="font-semibold text-ink">Counted, not judged</h3>
+            <p className="mt-0.5 text-xs text-muted">
+              Straight off the transcript — the same numbers every time, with no
+              model making a call about them.
+            </p>
+            <div className="mt-5">
+              <ClinicalMetricsPanel
+                metrics={clinical}
+                showTerms={visibility.content}
+              />
+            </div>
+          </section>
+        )}
 
         <section className="card p-6">
           <h3 className="font-semibold text-ink">Transcript</h3>
@@ -178,7 +204,9 @@ export default async function EducatorSessionPage({
                     )}
                     {turn.speak && (
                       <p className="mt-1 text-sm text-ink">
-                        <span className="text-muted">Coach: </span>
+                        <span className="text-muted">
+                          {track === "clinical" ? "Patient" : "Coach"}:{" "}
+                        </span>
                         {turn.speak}
                       </p>
                     )}

@@ -19,6 +19,7 @@ export default function RoundResultsRecording({
   turnSeconds,
   fallbackDurationSec,
   max = 10,
+  showTimeline = true,
 }: {
   roundId: string;
   recordingState: RecordingState;
@@ -27,6 +28,13 @@ export default function RoundResultsRecording({
   turnSeconds: number[];
   fallbackDurationSec: number;
   max?: number;
+  /**
+   * False on a tenant that doesn't score (`cus`), where there is no rubric and
+   * so no trajectory to plot. The recording, the processing banner and the
+   * failure notice all still apply — this component owns those regardless of
+   * whether anything was scored.
+   */
+  showTimeline?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -71,10 +79,13 @@ export default function RoundResultsRecording({
           <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-line border-t-brand" />
           <span>
             <span className="font-medium text-ink">
-              Analysing your video for analytics…
+              {showTimeline
+                ? "Analysing your video for analytics…"
+                : "Processing your video…"}
             </span>{" "}
-            Your scores below are already final — the replay appears here on its
-            own once the video finishes processing.
+            {showTimeline
+              ? "Your scores below are already final — the replay appears here on its own once the video finishes processing."
+              : "Your transcript below is already complete — the replay appears here on its own once the video finishes processing."}
           </span>
         </div>
       )}
@@ -82,8 +93,10 @@ export default function RoundResultsRecording({
       {state === "failed" && (
         <p className="rounded-lg border border-line bg-canvas px-4 py-3 text-sm text-muted">
           The video from this session didn&apos;t finish uploading, so there
-          isn&apos;t a replay. Your scores and coaching moments below are
-          unaffected.
+          isn&apos;t a replay.{" "}
+          {showTimeline
+            ? "Your scores and coaching moments below are unaffected."
+            : "Your transcript below is unaffected."}
         </p>
       )}
 
@@ -108,6 +121,7 @@ export default function RoundResultsRecording({
           }}
         />
       )}
+      {showTimeline && (
       <TopicsTimeline
         series={series}
         kinks={kinks}
@@ -123,6 +137,7 @@ export default function RoundResultsRecording({
             : undefined
         }
       />
+      )}
     </div>
   );
 }

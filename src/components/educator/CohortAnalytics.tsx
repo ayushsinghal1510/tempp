@@ -3,7 +3,7 @@ import TopicBars from "@/components/charts/bklit/TopicBars";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
 import SessionsChart from "@/components/charts/bklit/SessionsChart";
 import FunnelBar from "@/components/educator/FunnelBar";
-import { TOPIC_META } from "@/lib/practice/topics";
+import type { TenantConfig } from "@/lib/tenants/config";
 import {
   classWeakest,
   cohortProgress,
@@ -24,20 +24,24 @@ export default function CohortAnalytics({
   students,
   funnel,
   scope,
+  tenant,
   extraKpis,
 }: {
   students: StudentRounds[];
   funnel: Funnel;
   /** Names the population in the copy — "this class", "this company". */
   scope: string;
+  /** Supplies the rubric these students were scored against, plus the nouns. */
+  tenant: TenantConfig;
   /** Layer-specific cards prepended to the row (student count, quota, …). */
   extraKpis?: React.ReactNode;
 }) {
-  const stats = cohortStats(students);
-  const { perTopic, contributing } = classWeakest(students);
-  const progress = cohortProgress(students);
+  const { topics, features, copy } = tenant;
+  const stats = cohortStats(students, topics);
+  const { perTopic, contributing } = classWeakest(students, topics);
+  const progress = cohortProgress(students, topics);
 
-  const barItems = TOPIC_META.map((t, i) => ({
+  const barItems = topics.map((t, i) => ({
     label: t.label,
     value: perTopic[i],
   }))
@@ -87,7 +91,7 @@ export default function CohortAnalytics({
       {contributing === 0 ? (
         <div className="card p-8 text-center text-sm text-muted">
           No scored sessions in {scope} yet. The charts here fill in as soon as
-          students start running interviews.
+          students start running {copy.sessionNoun}s.
         </div>
       ) : (
         <>
@@ -105,8 +109,9 @@ export default function CohortAnalytics({
             <section className="card p-6">
               <h3 className="font-semibold text-ink">Where students drop off</h3>
               <p className="mt-0.5 text-sm text-muted">
-                A resume is required before a session can start, so anyone stuck
-                there hasn&apos;t been able to begin.
+                {features.resume
+                  ? "A resume is required before a session can start, so anyone stuck there hasn't been able to begin."
+                  : `Every stage from being assigned a ${copy.unitSingular} through to a scored ${copy.sessionNoun}.`}
               </p>
               <div className="mt-5">
                 <FunnelBar funnel={funnel} />
@@ -132,7 +137,7 @@ export default function CohortAnalytics({
                   }))}
                   categories={progress.perTopic}
                   max={10}
-                  emptyMessage={`Not enough repeat sessions in ${scope} yet — this needs at least two students on their second interview before a trend means anything.`}
+                  emptyMessage={`Not enough repeat sessions in ${scope} yet — this needs at least two students on their second ${copy.sessionNoun} before a trend means anything.`}
                 />
               </div>
             </section>
@@ -140,12 +145,12 @@ export default function CohortAnalytics({
             <section className="card p-6">
               <h3 className="font-semibold text-ink">Shape of {scope}</h3>
               <p className="mt-0.5 text-sm text-muted">
-                Average across all six topics — a lopsided shape is a syllabus
-                gap, not an individual&apos;s problem.
+                Average across all {topics.length} topics — a lopsided shape is
+                a syllabus gap, not an individual&apos;s problem.
               </p>
               <div className="mt-4">
                 <TopicRadar
-                  axes={TOPIC_META.map((t) => t.label)}
+                  axes={topics.map((t) => t.label)}
                   series={[
                     {
                       label: "Average",

@@ -31,7 +31,7 @@ import SessionsTable, {
 import SessionsChart from "@/components/charts/bklit/SessionsChart";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
 import TopicBars from "@/components/charts/bklit/TopicBars";
-import { TOPIC_META } from "@/lib/practice/topics";
+import { topicsFor } from "@/lib/tenants/config";
 import {
   aggregate,
   latestTopicScores,
@@ -47,6 +47,7 @@ import {
   RADAR_STEPS,
   BARS_STEPS,
 } from "@/lib/practice/chartExplainers";
+import { deadlineState } from "@/lib/practice/deadline";
 import CompanySwitcher from "./CompanySwitcher";
 
 export const dynamic = "force-dynamic";
@@ -58,12 +59,14 @@ export default async function PracticeCompanyPage({
 }) {
   const { id } = await params;
   const sessionUser = await requireUser(["practice"], "/practice/login");
+  const topics = topicsFor(sessionUser.tenant);
 
   // Access first: 404 unless this user may actually use the company. Only
   // then load the (user-scoped) rounds and the rest of the page.
   await requireAccessibleCompany(sessionUser.id, id);
 
-  const [company, allCompanies, profileUser, resumeChat] = await Promise.all([
+  const [company, allCompanies, profileUser, resumeChat, assignment] =
+    await Promise.all([
     getCompanyWithRounds(id, sessionUser.id),
     getUserCompanyList(sessionUser.id),
     prisma.user.findUnique({
@@ -71,11 +74,21 @@ export default async function PracticeCompanyPage({
       select: { course: true, cgpa: true },
     }),
     getResumeChatFor(sessionUser.id, id),
+    prisma.practiceAssignment.findUnique({
+      where: { companyId_userId: { companyId: id, userId: sessionUser.id } },
+      select: { dueDate: true, unlockedAt: true },
+    }),
   ]);
 
   if (!company) notFound();
 
-  const stats = aggregate(company.rounds);
+  // A self-registered company has no assignment and therefore no deadline.
+  // createSession enforces this again server-side — this only decides whether
+  // the student is shown a button that would refuse them.
+  const deadline = assignment ? deadlineState(assignment) : null;
+  const locked = deadline?.status === "locked";
+
+  const stats = aggregate(company.rounds, topics);
   const profile = tierProfile(company.tier);
   const research = company.companyResearch as CompanyResearch | null;
 
@@ -90,15 +103,17 @@ export default async function PracticeCompanyPage({
 
   const timeline = company.rounds.map((r, i) => ({
     label: `S${i + 1}`,
-    value: r.turns.some((t) => t.topics != null) ? overallScore(r) : 0,
+    value: r.turns.some((t) => t.topics != null) ? overallScore(r, topics) : 0,
   }));
 
-  const categorySeries = TOPIC_META.map((t) => ({
+  const categorySeries = topics.map((t) => ({
     key: t.key,
     label: t.label,
     color: t.color,
     values: company.rounds.map((r) =>
-      r.turns.some((tn) => tn.topics != null) ? latestTopicScores(r)[t.key] : 0,
+      r.turns.some((tn) => tn.topics != null)
+        ? latestTopicScores(r, topics)[t.key]
+        : 0,
     ),
   }));
 
@@ -107,7 +122,7 @@ export default async function PracticeCompanyPage({
       ? [{ label: "Average", color: "var(--brand)", values: stats.avgPerTopic }]
       : [];
 
-  const barItems = TOPIC_META.map((t, i) => ({
+  const barItems = topics.map((t, i) => ({
     label: t.label,
     value: stats.avgPerTopic[i],
   }))
@@ -122,9 +137,9 @@ export default async function PracticeCompanyPage({
     date: r.createdAt,
     durationSeconds: sessionDurationSeconds(r),
     turnCount: r.turns.length,
-    bestTopic: bestWorstTopic(r)?.best ?? null,
-    worstTopic: bestWorstTopic(r)?.worst ?? null,
-    improvement: sessionImprovement(r),
+    bestTopic: bestWorstTopic(r, topics)?.best ?? null,
+    worstTopic: bestWorstTopic(r, topics)?.worst ?? null,
+    improvement: sessionImprovement(r, topics),
     completed: r.status === "completed",
   }));
 
@@ -162,7 +177,22 @@ export default async function PracticeCompanyPage({
             >
               Resume &amp; career chat
             </Link>
-            {resumeChat ? (
+            {locked ? (
+              <div className="text-right">
+                <button
+                  type="button"
+                  disabled
+                  className="cursor-not-allowed rounded-lg bg-faint/20 px-4 py-2 text-sm font-semibold text-faint"
+                >
+                  Locked
+                </button>
+                <p className="mt-1 text-xs text-danger">
+                  Deadline passed{" "}
+                  {deadline?.dueDate?.toLocaleDateString()} — ask your educator
+                  to reopen.
+                </p>
+              </div>
+            ) : resumeChat ? (
               <form action={createSession.bind(null, company.id)}>
                 <button
                   type="submit"
@@ -183,7 +213,7 @@ export default async function PracticeCompanyPage({
         </section>
 
         <div className="card p-5 text-sm font-medium text-ink">
-          {summarizeStats(stats)}
+          {summarizeStats(stats, topics)}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -196,8 +226,8 @@ export default async function PracticeCompanyPage({
                 : undefined
             }
           />
-          <KpiCard label="Best quality" value={topicLabel(stats.bestTopic)} />
-          <KpiCard label="Worst quality" value={topicLabel(stats.worstTopic)} />
+          <KpiCard label="Best quality" value={topicLabel(stats.bestTopic, topics)} />
+          <KpiCard label="Worst quality" value={topicLabel(stats.worstTopic, topics)} />
           <div className="card p-4" />
         </div>
 
@@ -228,7 +258,7 @@ export default async function PracticeCompanyPage({
                 </div>
                 <div className="mt-4">
                   <TopicRadar
-                    axes={TOPIC_META.map((t) => t.label)}
+                    axes={topics.map((t) => t.label)}
                     series={radarSeries}
                     max={10}
                   />
@@ -285,7 +315,11 @@ export default async function PracticeCompanyPage({
         <section>
           <h2 className="text-lg font-semibold text-ink">Sessions</h2>
           <div className="mt-3">
-            <SessionsTable sessions={sessionRows} showCompanyColumn={false} />
+            <SessionsTable
+              sessions={sessionRows}
+              topics={topics}
+              showCompanyColumn={false}
+            />
           </div>
         </section>
       </div>

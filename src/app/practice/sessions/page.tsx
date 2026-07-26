@@ -9,11 +9,13 @@ import {
   sessionDurationSeconds,
   sessionImprovement,
 } from "@/lib/practice/metrics";
+import { topicsFor } from "@/lib/tenants/config";
 
 export const dynamic = "force-dynamic";
 
 export default async function PracticeSessionsPage() {
   const user = await requireUser(["practice"], "/practice/login");
+  const topics = topicsFor(user.tenant);
   const rounds = await getUserRoundsWithCompany(user.id);
 
   // Number sessions within their own company (or the legacy/no-company
@@ -25,7 +27,7 @@ export default async function PracticeSessionsPage() {
       const key = r.companyId ?? "legacy";
       const n = (seqByKey.get(key) ?? 0) + 1;
       seqByKey.set(key, n);
-      const bw = bestWorstTopic(r);
+      const bw = bestWorstTopic(r, topics);
       return {
         id: r.id,
         label: `Session ${n}`,
@@ -37,7 +39,7 @@ export default async function PracticeSessionsPage() {
         turnCount: r.turns.length,
         bestTopic: bw?.best ?? null,
         worstTopic: bw?.worst ?? null,
-        improvement: sessionImprovement(r),
+        improvement: sessionImprovement(r, topics),
         completed: r.status === "completed",
       };
     })
@@ -55,7 +57,7 @@ export default async function PracticeSessionsPage() {
           </p>
         </section>
 
-        <SessionsTable sessions={rows} showCompanyColumn />
+        <SessionsTable sessions={rows} topics={topics} showCompanyColumn />
       </div>
     </main>
   );

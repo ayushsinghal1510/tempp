@@ -1,28 +1,24 @@
 import type { Funnel } from "@/lib/practice/educatorMetrics";
 
-const STAGES: { key: keyof Funnel; label: string; note: string }[] = [
-  { key: "assigned", label: "Assigned", note: "" },
-  { key: "resumeUploaded", label: "Resume uploaded", note: "required to start" },
-  { key: "started", label: "Started a session", note: "" },
-  { key: "completed", label: "Completed one", note: "" },
-  { key: "scored", label: "Has scores", note: "" },
-];
-
 /**
- * A plain stacked bar rather than a chart primitive — five ordered counts
- * with a drop-off between each, which the existing funnel chart (built for
- * usage volumes) doesn't express any more clearly than this does.
+ * A plain stacked bar rather than a chart primitive — a handful of ordered
+ * counts with a drop-off between each, which the existing funnel chart (built
+ * for usage volumes) doesn't express any more clearly than this does.
+ *
+ * The stages come from the data, not from a list here: the clinical track has
+ * no resume gate, so its funnel is genuinely one stage shorter rather than one
+ * stage sitting permanently at zero.
  */
 export default function FunnelBar({ funnel }: { funnel: Funnel }) {
-  const total = funnel.assigned || 1;
+  if (funnel.length === 0) return null;
+  const total = funnel[0].value || 1;
 
   return (
     <div className="space-y-3">
-      {STAGES.map((stage, i) => {
-        const value = funnel[stage.key];
-        const pct = Math.round((value / total) * 100);
-        const prev = i === 0 ? value : funnel[STAGES[i - 1].key];
-        const lost = prev - value;
+      {funnel.map((stage, i) => {
+        const pct = Math.round((stage.value / total) * 100);
+        const prev = i === 0 ? stage.value : funnel[i - 1].value;
+        const lost = prev - stage.value;
 
         return (
           <div key={stage.key}>
@@ -36,7 +32,7 @@ export default function FunnelBar({ funnel }: { funnel: Funnel }) {
                 )}
               </span>
               <span className="tabular-nums text-muted">
-                {value}
+                {stage.value}
                 {lost > 0 && (
                   <span className="ml-2 text-xs text-danger">−{lost}</span>
                 )}

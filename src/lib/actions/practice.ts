@@ -10,6 +10,8 @@ import { joinGroupByCode } from "@/lib/practice/joinGroup";
 import { researchCompany } from "@/lib/research/companyResearch";
 import { tierForSalary } from "@/lib/research/tierProfiles";
 import { userTag, companyTag, roundTag } from "@/lib/practice/cacheTags";
+import { tenantConfig } from "@/lib/tenants/config";
+import { deadlineState } from "@/lib/practice/deadline";
 
 export type ActionResult = { ok?: true; error?: string };
 
@@ -29,6 +31,13 @@ export async function createCompany(
   formData: FormData,
 ): Promise<CompanyResult> {
   const user = await requireUser(["practice"], "/practice/login");
+
+  // Enforced here and not only by hiding the form: on the clinical track a
+  // student has no business registering their own company, and the UI being
+  // absent is not an access control.
+  if (!tenantConfig(user.tenant).features.company) {
+    return { error: "Your sessions are set by your educator." };
+  }
 
   const companyName = String(formData.get("companyName") ?? "").trim();
   const jobTitle = String(formData.get("jobTitle") ?? "").trim();
@@ -105,9 +114,29 @@ export async function createSession(companyId: string): Promise<never> {
   // start at all — send them to upload it first instead of creating a round.
   // Per-student, not per-company: on a shared company each student uploads
   // their own.
-  const resumeChat = await getResumeChatFor(user.id, companyId);
-  if (!resumeChat) {
-    redirect(`/practice/companies/${companyId}/resume-chat`);
+  //
+  // Gated on the tenant because the clinical track has no resume at all: the
+  // session is the educator's patient case, so there is nothing for a student
+  // to upload and nothing to gate on.
+  if (tenantConfig(user.tenant).features.resume) {
+    const resumeChat = await getResumeChatFor(user.id, companyId);
+    if (!resumeChat) {
+      redirect(`/practice/companies/${companyId}/resume-chat`);
+    }
+  }
+
+  // A locked assignment is refused here, not just hidden in the UI. The button
+  // is disabled on the list, but this action is reachable directly, and the
+  // check must run BEFORE the session pool is decremented below — otherwise a
+  // refused start would still burn one of the class's paid seats.
+  const assignment = await prisma.practiceAssignment.findUnique({
+    where: { companyId_userId: { companyId, userId: user.id } },
+    select: { dueDate: true, unlockedAt: true },
+  });
+  if (assignment && !deadlineState(assignment).canStart) {
+    throw new Error(
+      "This session is past its deadline and has been locked. Ask your educator to reopen it.",
+    );
   }
 
   // Org-owned companies draw on the educator's contracted session pool. Check

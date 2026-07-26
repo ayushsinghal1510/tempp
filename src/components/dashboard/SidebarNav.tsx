@@ -8,6 +8,7 @@ import {
   Users,
   GraduationCap,
   School,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,6 +19,7 @@ const ICONS: Record<string, LucideIcon> = {
   students: Users,
   universities: School,
   student: GraduationCap,
+  report: FileText,
 };
 
 export type NavItem = { label: string; href: string; icon: keyof typeof ICONS };

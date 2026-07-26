@@ -6,7 +6,7 @@ import ChartInfoButton from "@/components/practice/ChartInfoButton";
 import SessionsChart from "@/components/charts/bklit/SessionsChart";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
 import TopicBars from "@/components/charts/bklit/TopicBars";
-import { TOPIC_META } from "@/lib/practice/topics";
+import { tenantConfig } from "@/lib/tenants/config";
 import {
   aggregate,
   latestTopicScores,
@@ -24,10 +24,11 @@ export const dynamic = "force-dynamic";
 
 export default async function PracticeHomePage() {
   const user = await requireUser(["practice"], "/practice/login");
+  const { topics, features, copy } = tenantConfig(user.tenant);
   const companies = await getUserCompaniesWithRounds(user.id);
 
   const allRounds = companies.flatMap((c) => c.rounds);
-  const overall = aggregate(allRounds);
+  const overall = aggregate(allRounds, topics);
 
   const orderedRounds = allRounds
     .slice()
@@ -37,16 +38,16 @@ export default async function PracticeHomePage() {
 
   const timeline = orderedRounds.map((r, i) => ({
     label: `S${i + 1}`,
-    value: r.turns.some((t) => t.topics != null) ? overallScore(r) : 0,
+    value: r.turns.some((t) => t.topics != null) ? overallScore(r, topics) : 0,
   }));
 
-  const categorySeries = TOPIC_META.map((t) => ({
+  const categorySeries = topics.map((t) => ({
     key: t.key,
     label: t.label,
     color: t.color,
     values: orderedRounds.map((r) =>
       r.turns.some((tn) => tn.topics != null)
-        ? latestTopicScores(r)[t.key]
+        ? latestTopicScores(r, topics)[t.key]
         : 0,
     ),
   }));
@@ -62,7 +63,7 @@ export default async function PracticeHomePage() {
         ]
       : [];
 
-  const barItems = TOPIC_META.map((t, i) => ({
+  const barItems = topics.map((t, i) => ({
     label: t.label,
     value: overall.avgPerTopic[i],
   }))
@@ -75,7 +76,9 @@ export default async function PracticeHomePage() {
 
       <div className="mx-auto w-full max-w-[1800px] space-y-6 px-6 py-10">
         <div className="card p-5 text-sm font-medium text-ink">
-          {summarizeStats(overall)}
+          {features.scoring
+            ? summarizeStats(overall, topics)
+            : `You've run ${overall.totalSessions} ${overall.totalSessions === 1 ? copy.sessionNoun : copy.sessionNoun + "s"}. Open any one to play the recording back and read the transcript.`}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -83,6 +86,8 @@ export default async function PracticeHomePage() {
             label="Total sessions"
             value={String(overall.totalSessions)}
           />
+          {features.scoring && (
+            <>
           <KpiCard
             label="Average improvement"
             value={qualitativeTrend(overall.avgImprovement)}
@@ -94,15 +99,17 @@ export default async function PracticeHomePage() {
           />
           <KpiCard
             label="Best qualities"
-            value={topicLabel(overall.bestTopic)}
+            value={topicLabel(overall.bestTopic, topics)}
           />
           <KpiCard
             label="Worst qualities"
-            value={topicLabel(overall.worstTopic)}
+            value={topicLabel(overall.worstTopic, topics)}
           />
+            </>
+          )}
         </div>
 
-        {allRounds.length > 0 ? (
+        {features.scoring && allRounds.length > 0 ? (
           <div className="space-y-6">
             <section className="card p-6">
               <div className="flex items-center gap-2">
@@ -135,7 +142,7 @@ export default async function PracticeHomePage() {
                 </p>
                 <div className="mt-4">
                   <TopicRadar
-                    axes={TOPIC_META.map((t) => t.label)}
+                    axes={topics.map((t) => t.label)}
                     series={radarSeries}
                     max={10}
                   />
@@ -158,7 +165,11 @@ export default async function PracticeHomePage() {
           </div>
         ) : (
           <div className="card p-8 text-center text-sm text-muted">
-            No sessions yet — add a company to start your first one.
+            {allRounds.length > 0
+              ? `Open a ${copy.unitSingular} to see your sessions.`
+              : features.company
+                ? "No sessions yet — add a company to start your first one."
+                : `No sessions yet — open a ${copy.unitSingular} to start your first one.`}
           </div>
         )}
       </div>

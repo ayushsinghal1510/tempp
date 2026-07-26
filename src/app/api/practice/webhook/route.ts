@@ -3,6 +3,7 @@ import { revalidateTag } from "next/cache";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { userTag, companyTag, roundTag } from "@/lib/practice/cacheTags";
+import { topicsFor } from "@/lib/tenants/config";
 
 // Voxio pings this URL whenever the workflow reaches the "ask_for_input"
 // stopping node — i.e. once per conversational turn. Confirmed real shape
@@ -28,7 +29,10 @@ import { userTag, companyTag, roundTag } from "@/lib/practice/cacheTags";
 // Every raw body is still logged to WebhookEvent unconditionally, before any
 // of this parsing, so nothing is lost if this shape shifts again.
 
-const TOPIC_KEYS = ["posture", "framing", "approach", "numbers", "confidence", "example"] as const;
+// The topic keys are NOT a constant here: they depend on which product the
+// student belongs to (interview vs clinical — see lib/tenants/config.ts). They
+// are resolved per round, from the round's own owner, so a clinical session can
+// never be parsed against the interview rubric and silently drop every score.
 
 const VISUAL_CONTEXT_RE = /<turn-visual-context>[\s\S]*?<\/turn-visual-context>/i;
 
@@ -48,7 +52,33 @@ function extractRoundId(body: Record<string, unknown>): string | null {
   return null;
 }
 
-function extractTurn(body: Record<string, unknown>): {
+// The only four kink types the UI knows how to colour and label.
+const KINK_TYPES = new Set(["suggestion", "acknowledged", "adopted", "repeated"]);
+
+/**
+ * Drop a kink type the model invented.
+ *
+ * Observed in live data: `improved` (twice), which is in none of TYPE_BADGE /
+ * TYPE_COLOR / TYPE_LABEL and so renders as an uncoloured chip labelled with
+ * the raw string. The prompt now forbids anything outside the four, but the
+ * model is the one filling this in, so the storage layer must not depend on it
+ * complying. Score and description are kept either way — only the unusable
+ * type is cleared, which downgrades the turn to "no kink" rather than losing
+ * the score history along with it.
+ */
+function normaliseTopic(value: object): object {
+  const v = value as { type_?: unknown };
+  if (typeof v.type_ === "string" && v.type_ !== "" && !KINK_TYPES.has(v.type_)) {
+    console.warn(`[webhook] discarding unknown kink type_: ${v.type_}`);
+    return { ...value, type_: "" };
+  }
+  return value;
+}
+
+function extractTurn(
+  body: Record<string, unknown>,
+  topicKeys: string[],
+): {
   transcript: string;
   speak: string | null;
   topics: Record<string, unknown>;
@@ -66,9 +96,9 @@ function extractTurn(body: Record<string, unknown>): {
     if (typeof out.speak === "string") {
       speak = out.speak;
     }
-    for (const key of TOPIC_KEYS) {
+    for (const key of topicKeys) {
       const value = out[key];
-      if (value && typeof value === "object") topics[key] = value;
+      if (value && typeof value === "object") topics[key] = normaliseTopic(value);
     }
   }
 
@@ -105,13 +135,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, note: "no roundId, logged only" });
   }
 
-  const round = await prisma.practiceRound.findUnique({ where: { id: roundId } });
+  const round = await prisma.practiceRound.findUnique({
+    where: { id: roundId },
+    include: { user: { select: { tenant: true } } },
+  });
   if (!round) {
     console.warn(`[practice webhook] unknown round ${roundId} — logged only`);
     return NextResponse.json({ ok: true, note: "unknown round, logged only" });
   }
 
-  const { transcript, speak, topics } = extractTurn(body);
+  const topicKeys = topicsFor(round.user.tenant).map((t) => t.key);
+  const { transcript, speak, topics } = extractTurn(body, topicKeys);
 
   // Skip the checkpoint right after greeting, before any real exchange happened.
   if (!transcript && !speak) {

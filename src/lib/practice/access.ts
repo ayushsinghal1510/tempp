@@ -12,9 +12,17 @@
 // module instead, for the same reason src/lib/auth/rbac.ts exists on the B2B
 // side: the rule lives at the data-access layer, not in the UI.
 //
-// A student reaches a company one of two ways, and only these two:
+// A user reaches a PracticeCompany one of three ways, and only these three:
 //   * they registered it themselves       → PracticeCompany.userId
 //   * an educator assigned it to them     → PracticeAssignment
+//   * it is a published `workflow` in an  → PracticeMember of any group in
+//     org they belong to                    that org
+//
+// The third exists for the `cus` tenant, where a customer's admin publishes
+// one prompt for their whole organisation and explicitly does not want to
+// hand it out person by person. It is deliberately narrowed to kind=workflow:
+// widening org membership to companies and scenarios would silently hand every
+// student in a school every assignment ever made there.
 // ────────────────────────────────────────────────────────────────────────────
 
 import { notFound } from "next/navigation";
@@ -49,18 +57,51 @@ export async function getAccessibleCompany(
       select: { id: true },
     });
     if (assignment) return company;
+
+    // Org-wide: a published workflow reaches everyone in its org. Still gated
+    // on `published`, so an admin can draft a prompt without it going live.
+    if (company.kind === "workflow" && (await isOrgMember(userId, company.orgId))) {
+      return company;
+    }
   }
 
   return null;
 }
 
-/** Every company this student may use — assigned (published) + self-created. */
+/** Is this user in any group belonging to this org? */
+async function isOrgMember(userId: string, orgId: string): Promise<boolean> {
+  const member = await prisma.practiceMember.findFirst({
+    where: { userId, group: { orgId } },
+    select: { id: true },
+  });
+  return member != null;
+}
+
+/** Every org this user belongs to, via their group memberships. */
+export async function memberOrgIds(userId: string): Promise<string[]> {
+  const rows = await prisma.practiceMember.findMany({
+    where: { userId },
+    select: { group: { select: { orgId: true } } },
+  });
+  return [...new Set(rows.map((r) => r.group.orgId))];
+}
+
+/**
+ * Every company this user may use — self-created, assigned (published), or a
+ * published workflow in an org they belong to.
+ */
 export async function listAccessibleCompanies(userId: string) {
+  const orgIds = await memberOrgIds(userId);
   return prisma.practiceCompany.findMany({
     where: {
       OR: [
         { userId },
         { status: "published", assignments: { some: { userId } } },
+        {
+          status: "published",
+          kind: "workflow",
+          orgId: { in: orgIds },
+        },
       ],
     },
     include: {
@@ -139,9 +180,21 @@ export async function roundVisibilityForEducator(
 
   const round = await prisma.practiceRound.findUnique({
     where: { id: roundId },
-    select: { userId: true, companyId: true, company: { select: { orgId: true } } },
+    select: {
+      userId: true,
+      companyId: true,
+      company: { select: { orgId: true, kind: true } },
+    },
   });
   if (!round?.companyId || round.company?.orgId !== orgId) return NOTHING;
+
+  // A workflow round has no assignment to read a mode from, and the customer
+  // who owns the deployment is entitled to the full record of sessions run
+  // against their own prompt — that control is the product. The drill/
+  // assessment split does not apply because there is nothing to grade.
+  if (round.company.kind === "workflow") {
+    return { analytics: true, content: true };
+  }
 
   const assignment = await prisma.practiceAssignment.findUnique({
     where: {

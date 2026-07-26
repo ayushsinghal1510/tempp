@@ -27,9 +27,14 @@ export async function POST(req: Request) {
     );
   }
 
+  // Note there is no domain check here, deliberately. Which product someone
+  // gets is decided once at signup and stored on the row; re-deriving it from
+  // the email at every login would lock out every account created before the
+  // domain rule existed.
   const sessionUser = {
     id: user.id,
     role: user.role,
+    tenant: user.tenant,
     universityId: user.universityId,
     name: user.name,
     email: user.email,

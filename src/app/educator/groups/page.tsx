@@ -3,7 +3,8 @@ import { requireUser } from "@/lib/auth/session";
 import { requireEducatorOrgId } from "@/lib/practice/access";
 import { prisma } from "@/lib/db";
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import { EDUCATOR_NAV } from "@/lib/nav";
+import { educatorNav } from "@/lib/nav";
+import { tenantConfig } from "@/lib/tenants/config";
 import NewGroupForm from "@/components/educator/NewGroupForm";
 import JoinCode from "@/components/educator/JoinCode";
 
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function EducatorGroupsPage() {
   const user = await requireUser(["practice_admin"], "/educator/login");
+  const unitPlural = tenantConfig(user.tenant).copy.unitPlural;
   const orgId = await requireEducatorOrgId(user.id);
 
   const groups = await prisma.practiceGroup.findMany({
@@ -22,7 +24,7 @@ export default async function EducatorGroupsPage() {
   });
 
   return (
-    <DashboardShell user={user} nav={EDUCATOR_NAV} title="Classes">
+    <DashboardShell user={user} nav={educatorNav(unitPlural)} title="Classes">
       <div className="space-y-6">
         <section className="card p-6">
           <h2 className="font-semibold text-ink">Create a class</h2>

@@ -5,7 +5,9 @@ import type { PracticeAssignmentMode } from "@prisma/client";
 import {
   assignCompanyToGroup,
   setAssignmentMode,
+  unlockAssignment,
 } from "@/lib/actions/educator";
+import type { DeadlineStatus } from "@/lib/practice/deadline";
 import Select from "@/components/ui/Select";
 
 export type AssignRow = {
@@ -17,7 +19,40 @@ export type AssignRow = {
   groupName: string | null;
   mode: PracticeAssignmentMode;
   dueDate: string | null;
+  completedSessions: number;
+  minSessions: number;
+  deadline: DeadlineStatus;
 };
+
+/**
+ * What the educator actually wants to know at a glance: who has done it, who
+ * hasn't, and who can no longer start. Derived rather than stored — the two
+ * inputs (sessions done, where the clock is) already exist, and a stored
+ * status would be one more thing to keep in sync.
+ */
+function studentStatus(r: AssignRow): { label: string; className: string } {
+  const enough = r.completedSessions >= Math.max(1, r.minSessions);
+  if (enough) {
+    // Done is done. Finishing late still counts as finishing, and an educator
+    // scanning for who to chase does not want completed rows lit up red.
+    return r.deadline === "grace" || r.deadline === "unlocked"
+      ? { label: "Done (late)", className: "bg-success-soft text-success" }
+      : { label: "Done", className: "bg-success-soft text-success" };
+  }
+  if (r.completedSessions > 0) {
+    return {
+      label: `In progress ${r.completedSessions}/${Math.max(1, r.minSessions)}`,
+      className: "bg-brand-soft text-brand",
+    };
+  }
+  if (r.deadline === "locked") {
+    return { label: "Missed", className: "bg-danger-soft text-danger" };
+  }
+  if (r.deadline === "grace") {
+    return { label: "Overdue", className: "bg-warning-soft text-warning" };
+  }
+  return { label: "Not started", className: "bg-canvas text-muted" };
+}
 
 const MODE_COPY: Record<PracticeAssignmentMode, string> = {
   drill:
@@ -181,13 +216,68 @@ export default function AssignPanel({
                   </label>
                 )}
               </div>
-              <p className="mt-2 text-xs text-muted">
-                {rows
-                  .slice(0, 8)
-                  .map((r) => r.userName)
-                  .join(", ")}
-                {rows.length > 8 && ` +${rows.length - 8} more`}
-              </p>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-xs uppercase tracking-wide text-faint">
+                    <tr>
+                      <th className="py-1.5 pr-3 font-medium">Student</th>
+                      <th className="py-1.5 pr-3 font-medium">Sessions</th>
+                      <th className="py-1.5 pr-3 font-medium">Status</th>
+                      <th className="py-1.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {rows.map((r) => {
+                      const status = studentStatus(r);
+                      return (
+                        <tr key={r.id}>
+                          <td className="py-2 pr-3">
+                            <div className="text-ink">{r.userName}</div>
+                            <div className="text-xs text-faint">
+                              {r.userEmail}
+                            </div>
+                          </td>
+                          <td className="py-2 pr-3 tabular-nums text-muted">
+                            {r.completedSessions}
+                          </td>
+                          <td className="py-2 pr-3">
+                            <span
+                              className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${status.className}`}
+                            >
+                              {status.label}
+                            </span>
+                          </td>
+                          <td className="py-2 text-right">
+                            {/* Only for a student actually locked out. A
+                                reopen is permanent, so offering it on rows
+                                that aren't locked invites undoing a deadline
+                                that is still doing its job. */}
+                            {r.deadline === "locked" && (
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={() =>
+                                  startTransition(() =>
+                                    void unlockAssignment(companyId, r.userId),
+                                  )
+                                }
+                                className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink transition hover:border-brand/40 disabled:opacity-60"
+                              >
+                                Reopen
+                              </button>
+                            )}
+                            {r.deadline === "unlocked" && (
+                              <span className="text-xs text-faint">
+                                Reopened
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ))}
         </div>

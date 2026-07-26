@@ -33,6 +33,7 @@ async function main() {
   const admin: SessionUser = {
     id: adminUser.id,
     role: "admin",
+    tenant: "jer",
     universityId: nims.id,
     name: adminUser.name,
     email: adminUser.email,
@@ -40,6 +41,7 @@ async function main() {
   const student: SessionUser = {
     id: studentUser.id,
     role: "student",
+    tenant: "jer",
     universityId: nims.id,
     name: studentUser.name,
     email: studentUser.email,
@@ -47,6 +49,7 @@ async function main() {
   const superAdmin: SessionUser = {
     id: "super",
     role: "super_admin",
+    tenant: "jer",
     universityId: null,
     name: "Ops",
     email: "ops@prepai.com",

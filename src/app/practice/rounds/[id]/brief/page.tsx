@@ -13,6 +13,10 @@ import {
 } from "@/lib/research/expectationMatrix";
 import CompanyResearchPanel from "@/components/practice/CompanyResearchPanel";
 import FocusTable from "@/components/practice/FocusTable";
+import ScenarioBrief from "@/components/practice/ScenarioBrief";
+import RoundVisibilityNote from "@/components/practice/RoundVisibilityNote";
+import type { ClinicalScenario } from "@/lib/research/scenarioGeneration";
+import { tenantConfig } from "@/lib/tenants/config";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +32,7 @@ export default async function PracticeBriefPage({
 }) {
   const { id } = await params;
   const sessionUser = await requireUser(["practice"], "/practice/login");
+  const { copy } = tenantConfig(sessionUser.tenant);
 
   const round = await prisma.practiceRound.findUnique({
     where: { id },
@@ -50,6 +55,72 @@ export default async function PracticeBriefPage({
       ? getAssignment(sessionUser.id, round.companyId)
       : Promise.resolve(null),
   ]);
+
+  // A workflow has no brief to read: the admin's greeting is the entire
+  // introduction, and there is nothing about visibility to disclose because
+  // nothing is scored. Handled here rather than only in createSession so a
+  // pasted /brief URL behaves the same way.
+  if (round.company?.kind === "workflow") {
+    redirect(`/practice/rounds/${round.id}/live`);
+  }
+
+  const scenario =
+    round.company?.kind === "scenario"
+      ? (round.company.scenario as ClinicalScenario | null)
+      : null;
+
+  // The clinical brief shares only the visibility note and the start button
+  // with the interview one — there is no company research, no tier profile and
+  // no degree-based focus table to render, so it returns here rather than
+  // threading conditionals through all of that.
+  if (scenario) {
+    return (
+      <main className="min-h-screen bg-canvas px-6 py-10 text-ink">
+        <div className="mx-auto w-full max-w-3xl space-y-6">
+          <Link
+            href="/practice/companies"
+            className="text-sm text-muted hover:text-ink"
+          >
+            ← Back
+          </Link>
+
+          <section className="card p-6">
+            <div className="text-xs font-medium uppercase tracking-wide text-faint">
+              Patient {copy.sessionNoun}
+            </div>
+            <h1 className="mt-1 text-2xl font-bold text-ink">
+              {scenario.title || round.company?.companyName}
+            </h1>
+          </section>
+
+          <section className="card p-6">
+            <ScenarioBrief scenario={scenario} />
+          </section>
+
+          <RoundVisibilityNote
+            mode={assignment?.mode ?? null}
+            assigned={assignment != null}
+            unitSingular={copy.unitSingular}
+          />
+
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/practice/rounds/${round.id}/live`}
+              className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-brand-strong"
+            >
+              Begin {copy.sessionNoun} →
+            </Link>
+            <Link
+              href="/practice/companies"
+              className="text-sm text-muted hover:text-ink"
+            >
+              Not yet
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   const companyName = round.company?.companyName ?? round.companyName!;
   const jobTitle = round.company?.jobTitle ?? round.jobTitle;
@@ -179,33 +250,11 @@ export default async function PracticeBriefPage({
         </div>
 
         {/* Never let a student start without knowing who can see this. */}
-        <section
-          className={`card p-5 text-sm ${
-            assignment?.mode === "assessment"
-              ? "border-warning/40 bg-warning-soft text-warning"
-              : "text-muted"
-          }`}
-        >
-          {assignment?.mode === "assessment" ? (
-            <>
-              <strong className="font-semibold">Graded assessment.</strong> Your
-              educator can see your scores, the full transcript, and the
-              recording of this round.
-            </>
-          ) : assignment ? (
-            <>
-              <strong className="font-semibold text-ink">Private drill.</strong>{" "}
-              Your educator sees your scores and progress — never the
-              transcript or the recording.
-            </>
-          ) : (
-            <>
-              <strong className="font-semibold text-ink">Private to you.</strong>{" "}
-              You added this company yourself, so nobody else can see this
-              round.
-            </>
-          )}
-        </section>
+        <RoundVisibilityNote
+          mode={assignment?.mode ?? null}
+          assigned={assignment != null}
+          unitSingular={copy.unitSingular}
+        />
 
         <div className="flex items-center gap-3">
           <Link

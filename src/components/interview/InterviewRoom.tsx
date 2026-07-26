@@ -14,6 +14,12 @@ import {
   buildPracticeCustoms,
   type PracticeDrive,
 } from "@/lib/voice/practiceCustoms";
+import { buildClinicalCustoms } from "@/lib/voice/clinicalCustoms";
+import {
+  buildWorkflowCustoms,
+  type CustomWorkflow,
+} from "@/lib/voice/workflowCustoms";
+import type { ClinicalScenario } from "@/lib/research/scenarioGeneration";
 import type { CompanyContext } from "@/lib/voice/companyContext";
 import { startRound } from "@/lib/actions/student";
 import {
@@ -25,11 +31,25 @@ import { beginBackgroundUpload } from "@/lib/practice/recordingUpload";
 type ConnState = "connecting" | "connected" | "failed";
 type AiState = "waiting" | "listening" | "thinking" | "speaking";
 
+/** One exchange as stored by the webhook: what the student said, what came back. */
+type LiveTurn = { turnNumber: number; transcript: string; speak: string | null };
+
+/**
+ * How often the live transcript polls. The turns it reads are written by the
+ * voice server's webhook, which lands a turn or two behind the audio the
+ * student just heard — so this is a running record to read back, never a
+ * real-time caption track, and polling faster would only add load without
+ * making it any more current.
+ */
+const TRANSCRIPT_POLL_MS = 3000;
+
 export default function InterviewRoom({
   roundId,
   candidateName,
   company,
   drive,
+  scenario,
+  workflow,
   kindLabel,
   backHref,
   variant = "company",
@@ -40,6 +60,18 @@ export default function InterviewRoom({
   company?: CompanyContext;
   /** Optional for variant "practice" — a self-created drive's company context. */
   drive?: PracticeDrive;
+  /**
+   * Set on the clinical track: runs the simulated-patient workflow instead of
+   * the interviewer one. Everything else about a practice round — the round
+   * lifecycle, the recording, the webhook — is genuinely identical between the
+   * two, which is why this is a swapped workflow rather than a third variant.
+   */
+  scenario?: ClinicalScenario;
+  /**
+   * Set on the `cus` track: runs the customer's own greeting+prompt with no
+   * scoring and no vision. Mutually exclusive with `scenario`.
+   */
+  workflow?: CustomWorkflow;
   kindLabel: string;
   backHref: string;
   /** "practice" runs the generic, deliberately-scored practice workflow instead. */
@@ -47,7 +79,7 @@ export default function InterviewRoom({
 }) {
   const interviewerName =
     variant === "practice"
-      ? (drive?.companyName ?? "Practice Interviewer")
+      ? (scenario?.patientName ?? drive?.companyName ?? "Practice Interviewer")
       : company!.name;
   const router = useRouter();
   const [started, setStarted] = useState(false);
@@ -59,6 +91,7 @@ export default function InterviewRoom({
   const [hasAiVid, setHasAiVid] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [turns, setTurns] = useState<LiveTurn[]>([]);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -71,12 +104,58 @@ export default function InterviewRoom({
   const recordingMimeTypeRef = useRef<string>("");
   const recordingStartedAtRef = useRef<number>(0);
   const rafIdRef = useRef<number | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+  // Read inside the poll without making it a dependency — re-creating the
+  // interval on every new turn would reset the timer and drift the cadence.
+  const lastTurnRef = useRef(0);
 
   useEffect(() => {
     if (!started) return;
     const t = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [started]);
+
+  // Live transcript. Only the practice variant has a webhook receiver writing
+  // turns (customs.ts posts to a bare origin that never reaches one), so
+  // anywhere else this would poll forever for rows that are never created.
+  const showTranscript = variant === "practice";
+
+  useEffect(() => {
+    if (!started || !showTranscript) return;
+    let stopped = false;
+
+    async function poll() {
+      try {
+        const r = await fetch(
+          `/api/practice/rounds/${roundId}/turns?after=${lastTurnRef.current}`,
+          { cache: "no-store" },
+        );
+        if (!r.ok || stopped) return;
+        const data = (await r.json()) as { turns: LiveTurn[] };
+        if (stopped || !data.turns?.length) return;
+
+        lastTurnRef.current = data.turns[data.turns.length - 1].turnNumber;
+        // Append rather than replace: the request only asks for turns after
+        // the last one seen, so what comes back is the delta, not the whole
+        // conversation.
+        setTurns((prev) => [...prev, ...data.turns]);
+      } catch {
+        // A dropped poll is not worth surfacing — the transcript is a
+        // convenience, and the next tick picks up whatever was missed.
+      }
+    }
+
+    poll();
+    const t = setInterval(poll, TRANSCRIPT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [started, showTranscript, roundId]);
+
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [turns]);
 
   // Lightweight VAD to drive the AI "listening/speaking" indicator.
   const startVAD = useCallback(
@@ -280,9 +359,13 @@ export default function InterviewRoom({
       await waitForIceGathering(pc);
 
       const customs =
-        variant === "practice"
-          ? buildPracticeCustoms(candidateName, drive)
-          : buildCustoms(company!, candidateName);
+        variant !== "practice"
+          ? buildCustoms(company!, candidateName)
+          : workflow
+            ? buildWorkflowCustoms(candidateName, workflow)
+            : scenario
+              ? buildClinicalCustoms(candidateName, scenario)
+              : buildPracticeCustoms(candidateName, drive);
 
       let resp: Response;
       try {
@@ -743,7 +826,8 @@ export default function InterviewRoom({
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center gap-10 overflow-hidden">
+      <main className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 items-center justify-center gap-10 overflow-hidden">
         {/* candidate */}
         <div className="flex flex-col items-center gap-3">
           <div className="grid h-56 w-72 place-items-center overflow-hidden rounded-2xl border border-line bg-black">
@@ -791,6 +875,54 @@ export default function InterviewRoom({
             AI · {aiLabel[aiState]}
           </span>
         </div>
+      </div>
+
+      {showTranscript && (
+        <aside className="hidden w-96 shrink-0 flex-col border-l border-line bg-card lg:flex">
+          <div className="shrink-0 border-b border-line px-4 py-3">
+            <h2 className="text-sm font-semibold text-ink">Transcript</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              What you said, as it was heard. Read your own words back — that
+              is where most of the fixes are.
+            </p>
+          </div>
+
+          <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+            {turns.length === 0 ? (
+              <p className="text-xs text-faint">
+                Your first answer will appear here a few seconds after you
+                speak.
+              </p>
+            ) : (
+              turns.map((t) => (
+                <div key={t.turnNumber} className="space-y-2">
+                  {t.transcript && (
+                    <div className="ml-6 rounded-lg rounded-br-sm bg-brand-soft px-3 py-2">
+                      <div className="text-[10px] font-medium uppercase tracking-wide text-brand">
+                        You
+                      </div>
+                      <p className="mt-0.5 text-sm leading-relaxed text-ink">
+                        {t.transcript}
+                      </p>
+                    </div>
+                  )}
+                  {t.speak && (
+                    <div className="mr-6 rounded-lg rounded-bl-sm border border-line px-3 py-2">
+                      <div className="text-[10px] font-medium uppercase tracking-wide text-muted">
+                        {interviewerName}
+                      </div>
+                      <p className="mt-0.5 text-sm leading-relaxed text-ink">
+                        {t.speak}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            <div ref={transcriptEndRef} />
+          </div>
+        </aside>
+      )}
       </main>
 
       <footer className="flex shrink-0 items-center justify-center gap-4 border-t border-line py-4">

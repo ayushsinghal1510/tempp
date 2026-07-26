@@ -46,6 +46,41 @@ enum PracticeCompanyStatus {
   published
 }
 
+// Which product a practice account is using. Decided by email domain at
+// signup (see src/lib/tenants/config.ts) and then read from the row, never
+// recomputed — so accounts that predate the domain rule keep working.
+//
+//   jer → the original interview track: companies, resumes, the
+//         posture/framing/approach/numbers/confidence/example rubric.
+//   nim → the clinical track for medical students: educator-authored patient
+//         scenarios, no company and no resume, and the
+//         presence/rapport/listening/empathy/plainlanguage/dignity rubric.
+//
+//   cus → a managed customer deployment: the customer's own admin writes the
+//         greeting and the prompt, every user of that customer sees it
+//         immediately, and sessions are recorded and transcribed but never
+//         scored. No rubric, no companies, no scenarios, no assignments.
+//
+// All three share every model, route and chart below — the tenant selects a
+// rubric, a prompt and a set of feature flags, not a separate schema.
+enum Tenant {
+  jer
+  nim
+  cus
+}
+
+// PracticeCompany does triple duty across the tenants: an employer to
+// interview for (jer), a simulated patient encounter (nim), or a customer's
+// own prompt (cus). This discriminates them. Reusing one table is deliberate —
+// assignments, access control, visibility modes and the whole educator UI hang
+// off PracticeCompany, and forking it would mean maintaining parallel copies
+// of the access rules.
+enum PracticeCompanyKind {
+  company
+  scenario
+  workflow
+}
+
 // Where a session's webcam recording is in its journey from the browser to
 // disk. The student is released from the call the moment it ends, so the
 // results page needs to distinguish "there was never a recording" from
@@ -136,6 +171,12 @@ model User {
   name          String
   email         String  @unique
   passwordHash  String  @map("password_hash")
+  // Which practice product this account uses. Defaulting to `jer` is what
+  // grandfathers every account that predates the email-domain rule — they
+  // keep logging in and land on the interview track exactly as before.
+  // Meaningless for the B2B roles (super_admin/admin/student), which never
+  // read it.
+  tenant        Tenant  @default(jer)
   // Populated only for role = practice — the student's own degree + CGPA,
   // used to key the expectation matrix (course focus areas on the drive
   // briefing page). Null for every other role, and for practice accounts
@@ -362,6 +403,10 @@ model Recording {
 model PracticeOrg {
   id               String   @id @default(cuid())
   name             String
+  // An org belongs to exactly one tenant: a medical institute never holds
+  // interview companies and vice versa. Stored rather than derived from the
+  // admin's email so the org keeps its identity if admins change.
+  tenant           Tenant   @default(jer)
   sessionsAllotted Int      @default(0) @map("sessions_allotted")
   sessionsUsed     Int      @default(0) @map("sessions_used")
   createdAt        DateTime @default(now()) @map("created_at")
@@ -417,6 +462,11 @@ model PracticeAssignment {
   mode        PracticeAssignmentMode @default(drill)
   dueDate     DateTime?              @map("due_date")
   minSessions Int                    @default(1) @map("min_sessions")
+  // Educator override for a locked (past grace period) assignment. Set to the
+  // moment the educator reopened it; null means never unlocked. A timestamp
+  // rather than a boolean so the roster can show WHEN it was reopened —
+  // "unlocked" with no date is the kind of state nobody can audit later.
+  unlockedAt  DateTime?              @map("unlocked_at")
   createdAt   DateTime               @default(now()) @map("created_at")
 
   company PracticeCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -438,12 +488,29 @@ model PracticeCompany {
   userId          String?               @map("user_id")
   orgId           String?               @map("org_id")
   status          PracticeCompanyStatus @default(published)
+  // `company` (jer) or `scenario` (nim) — see PracticeCompanyKind.
+  kind            PracticeCompanyKind   @default(company)
+  // Display title for both kinds. An employer name on a `company`
+  // ("Razorpay"); the encounter on a `scenario` ("Mr Sharma, 78 — new
+  // diabetes diagnosis").
   companyName     String                @map("company_name")
+  // jobTitle / jobDescription / salaryLpa / tier / companyResearch are the
+  // `company` half and stay null on scenario rows; `scenario` is the
+  // `scenario` half and stays null on company rows.
   jobTitle        String?               @map("job_title")
   jobDescription  String?               @map("job_description")
   salaryLpa       Float?                @map("salary_lpa")
   tier            Tier? // company salary band, derived from salaryLpa
   companyResearch Json?                 @map("company_research")
+  // The generated patient case — see ClinicalScenario in
+  // src/lib/research/scenarioGeneration.ts. Educator-editable before publish,
+  // then injected into the simulated patient's prompt.
+  scenario        Json?
+  // { greeting, prompt } for a `workflow` row — see CustomWorkflow in
+  // src/lib/voice/workflowCustoms.ts. The whole definition of a cus session:
+  // the customer's admin owns both strings outright, and an edit reaches
+  // every one of their users on the next session with no publish step.
+  workflow        Json?
   createdAt       DateTime              @default(now()) @map("created_at")
 
   user        User?                @relation(fields: [userId], references: [id], onDelete: Cascade)

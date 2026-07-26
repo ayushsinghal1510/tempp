@@ -2,6 +2,7 @@
 // sentence and qualitative labels, so students get a takeaway without having
 // to read charts at all.
 import { topicLabel } from "./metrics";
+import type { TopicMeta } from "./topics";
 
 export function qualitativeLabel(score: number): string {
   if (score >= 8) return "Strong";
@@ -17,23 +18,26 @@ export function qualitativeTrend(avgImprovement: number | null): string {
   return "Steady";
 }
 
-export function summarizeStats({
-  totalSessions,
-  bestTopic,
-  worstTopic,
-  avgImprovement,
-}: {
-  totalSessions: number;
-  bestTopic: string | null;
-  worstTopic: string | null;
-  avgImprovement: number | null;
-}): string {
+export function summarizeStats(
+  {
+    totalSessions,
+    bestTopic,
+    worstTopic,
+    avgImprovement,
+  }: {
+    totalSessions: number;
+    bestTopic: string | null;
+    worstTopic: string | null;
+    avgImprovement: number | null;
+  },
+  topics: TopicMeta[],
+): string {
   if (totalSessions === 0) {
     return "Run your first practice session to see insights here.";
   }
 
-  const best = bestTopic ? topicLabel(bestTopic) : null;
-  const worst = worstTopic ? topicLabel(worstTopic) : null;
+  const best = bestTopic ? topicLabel(bestTopic, topics) : null;
+  const worst = worstTopic ? topicLabel(worstTopic, topics) : null;
   const trend =
     avgImprovement == null
       ? ""

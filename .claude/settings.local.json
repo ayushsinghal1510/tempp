@@ -23,7 +23,10 @@
       "Bash(./node_modules/.bin/prisma migrate *)",
       "Read(//system/conda/node/nvm/versions/node/**)",
       "Read(//usr/local/bin/**)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(curl -s -i -m 15 -H \"ngrok-skip-browser-warning: true\" https://feed-106-219-70-130.ngrok-free.app/rtc/ice-servers)",
+      "Bash(curl *)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/next/package.json'\\).version\\)\")"
     ]
   }
 }

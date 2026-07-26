@@ -3,13 +3,16 @@ import { requireUser } from "@/lib/auth/session";
 import { requireEducatorOrgId } from "@/lib/practice/access";
 import { prisma } from "@/lib/db";
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import { EDUCATOR_NAV } from "@/lib/nav";
+import { educatorNav } from "@/lib/nav";
+import { tenantConfig } from "@/lib/tenants/config";
 import { tierProfile } from "@/lib/research/tierProfiles";
 
 export const dynamic = "force-dynamic";
 
 export default async function EducatorCompaniesPage() {
   const user = await requireUser(["practice_admin"], "/educator/login");
+  const { copy, features } = tenantConfig(user.tenant);
+  const unitPlural = copy.unitPlural;
   const orgId = await requireEducatorOrgId(user.id);
 
   const companies = await prisma.practiceCompany.findMany({
@@ -21,27 +24,33 @@ export default async function EducatorCompaniesPage() {
   });
 
   return (
-    <DashboardShell user={user} nav={EDUCATOR_NAV} title="Companies">
+    <DashboardShell
+      user={user}
+      nav={educatorNav(unitPlural)}
+      title={`${copy.unitTitle}s`}
+    >
       <div className="space-y-6">
         <section className="card flex flex-wrap items-center justify-between gap-4 p-6">
           <div>
-            <h2 className="font-semibold text-ink">Your companies</h2>
+            <h2 className="font-semibold text-ink">Your {copy.unitPlural}</h2>
             <p className="mt-0.5 text-sm text-muted">
-              Researched once, then reused by every student you assign.
+              {features.research
+                ? "Researched once, then reused by every student you assign."
+                : "Written once, then reused by every student you assign."}
             </p>
           </div>
           <Link
             href="/educator/companies/new"
             className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-brand-strong"
           >
-            + Add company
+            + Add {copy.unitSingular}
           </Link>
         </section>
 
         {companies.length === 0 ? (
           <div className="card p-8 text-center text-sm text-muted">
-            No companies yet. Add one — research runs once and is shared across
-            the whole class.
+            No {copy.unitPlural} yet. Add one — it&apos;s written once and shared
+            across the whole class.
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

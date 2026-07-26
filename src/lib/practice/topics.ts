@@ -1,14 +1,14 @@
-// The 6-topic rubric's shared display metadata (key/label/color) — the single
-// source every practice page reads from instead of redefining the same list.
+// Rubric-agnostic display metadata for the scoring system.
+//
+// The topic LIST itself no longer lives here — it varies by tenant (interview
+// vs clinical) and is owned by src/lib/tenants/config.ts. Anything that needs
+// the rubric takes it as a parameter or a prop, so a page can never render one
+// tenant's data against another tenant's topics.
+//
+// What stays here is everything genuinely the same for both: the shape of a
+// scored topic, and how the 4 kink types are labelled and coloured.
 
-export const TOPIC_META: { key: string; label: string; color: string }[] = [
-  { key: "posture", label: "Posture", color: "var(--chart-1)" },
-  { key: "framing", label: "Framing", color: "var(--chart-2)" },
-  { key: "approach", label: "Approach", color: "var(--chart-3)" },
-  { key: "numbers", label: "Numbers", color: "var(--chart-4)" },
-  { key: "confidence", label: "Confidence", color: "var(--chart-5)" },
-  { key: "example", label: "Example", color: "var(--brand)" },
-];
+export type { TopicMeta } from "@/lib/tenants/config";
 
 export type TopicDict = {
   description?: string;

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { topicLabel } from "@/lib/practice/metrics";
+import type { TopicMeta } from "@/lib/practice/topics";
 import Select from "@/components/ui/Select";
 
 export type SessionRow = {
@@ -28,11 +29,19 @@ function formatDuration(seconds: number | null): string {
 
 export default function SessionsTable({
   sessions,
+  topics,
   showCompanyColumn = true,
 }: {
   sessions: SessionRow[];
+  /**
+   * The rubric these rows were scored against — resolves topic keys to labels.
+   * Empty on a tenant that doesn't score, which is what drops the three score
+   * columns below rather than filling them with dashes.
+   */
+  topics: TopicMeta[];
   showCompanyColumn?: boolean;
 }) {
+  const scoring = topics.length > 0;
   const [query, setQuery] = useState("");
   const [companyFilter, setCompanyFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<
@@ -120,9 +129,13 @@ export default function SessionsTable({
                 {showCompanyColumn && <th className="px-4 py-2.5">Company</th>}
                 <th className="px-4 py-2.5">Duration</th>
                 <th className="px-4 py-2.5">Turns</th>
-                <th className="px-4 py-2.5">Best quality</th>
-                <th className="px-4 py-2.5">Worst quality</th>
-                <th className="px-4 py-2.5">Improvement</th>
+                {scoring && (
+                  <>
+                    <th className="px-4 py-2.5">Best quality</th>
+                    <th className="px-4 py-2.5">Worst quality</th>
+                    <th className="px-4 py-2.5">Improvement</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -151,13 +164,21 @@ export default function SessionsTable({
                     {formatDuration(s.durationSeconds)}
                   </td>
                   <td className="px-4 py-2.5 tabular-nums">{s.turnCount}</td>
-                  <td className="px-4 py-2.5">{topicLabel(s.bestTopic)}</td>
-                  <td className="px-4 py-2.5">{topicLabel(s.worstTopic)}</td>
-                  <td className="px-4 py-2.5 tabular-nums">
-                    {s.improvement != null
-                      ? `${s.improvement >= 0 ? "+" : ""}${s.improvement.toFixed(1)}`
-                      : "—"}
-                  </td>
+                  {scoring && (
+                    <>
+                      <td className="px-4 py-2.5">
+                        {topicLabel(s.bestTopic, topics)}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {topicLabel(s.worstTopic, topics)}
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums">
+                        {s.improvement != null
+                          ? `${s.improvement >= 0 ? "+" : ""}${s.improvement.toFixed(1)}`
+                          : "—"}
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>

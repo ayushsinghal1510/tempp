@@ -6,7 +6,8 @@
 // of what a score means, so a student's own dashboard and their educator's
 // roll-up can never disagree about the same round.
 
-import { TOPIC_META, type TopicDict } from "./topics";
+import type { TopicDict, TopicMeta } from "./topics";
+import type { FunnelStage } from "@/lib/tenants/config";
 import {
   adoptionStats,
   aggregate,
@@ -57,14 +58,17 @@ export type TriageRow = {
  * these are exactly the topics the AI has stopped coaching — the ones that
  * now need a human.
  */
-export function stuckTopics(rounds: RoundWithTurns[]): StuckTopic[] {
+export function stuckTopics(
+  rounds: RoundWithTurns[],
+  topics: TopicMeta[],
+): StuckTopic[] {
   const repeated = new Map<string, number>();
   const adopted = new Set<string>();
 
   for (const round of rounds) {
     for (const turn of round.turns) {
       const dict = (turn.topics as Record<string, TopicDict> | null) ?? {};
-      for (const t of TOPIC_META) {
+      for (const t of topics) {
         const type_ = dict[t.key]?.type_;
         if (type_ === "repeated") {
           repeated.set(t.key, (repeated.get(t.key) ?? 0) + 1);
@@ -76,10 +80,10 @@ export function stuckTopics(rounds: RoundWithTurns[]): StuckTopic[] {
   }
 
   const latest = rounds.length
-    ? latestTopicScores(rounds[rounds.length - 1])
+    ? latestTopicScores(rounds[rounds.length - 1], topics)
     : {};
 
-  return TOPIC_META.filter((t) => repeated.has(t.key) && !adopted.has(t.key))
+  return topics.filter((t) => repeated.has(t.key) && !adopted.has(t.key))
     .map((t) => ({
       topicKey: t.key,
       repeated: repeated.get(t.key)!,
@@ -92,20 +96,23 @@ export function stuckTopics(rounds: RoundWithTurns[]): StuckTopic[] {
  * Students who need a human, most stuck first. Students with nothing stuck
  * are omitted entirely — this is a to-do list, not a roster.
  */
-export function triageList(students: StudentRounds[]): TriageRow[] {
+export function triageList(
+  students: StudentRounds[],
+  topics: TopicMeta[],
+): TriageRow[] {
   return students
     .map((s) => {
       const scored = scoredRounds(s.rounds);
-      const agg = aggregate(s.rounds);
+      const agg = aggregate(s.rounds, topics);
       return {
         userId: s.userId,
         name: s.name,
         email: s.email,
-        stuck: stuckTopics(s.rounds),
+        stuck: stuckTopics(s.rounds, topics),
         adoptionRate: agg.adoptionRate,
         sessions: s.rounds.length,
         latestOverall: scored.length
-          ? overallScore(scored[scored.length - 1])
+          ? overallScore(scored[scored.length - 1], topics)
           : null,
       };
     })
@@ -123,22 +130,25 @@ export function triageList(students: StudentRounds[]): TriageRow[] {
 
 /**
  * Average latest score per topic across the whole batch — what to teach next.
- * Returns one value per TOPIC_META entry, in order, plus the count of
+ * Returns one value per `topics` entry, in order, plus the count of
  * students who actually contributed a scored round.
  */
-export function classWeakest(students: StudentRounds[]): {
+export function classWeakest(
+  students: StudentRounds[],
+  topics: TopicMeta[],
+): {
   perTopic: number[];
   contributing: number;
 } {
   const perStudent = students
-    .map((s) => aggregate(s.rounds))
+    .map((s) => aggregate(s.rounds, topics))
     .filter((a) => a.totalSessions > 0);
 
   if (perStudent.length === 0) {
-    return { perTopic: TOPIC_META.map(() => 0), contributing: 0 };
+    return { perTopic: topics.map(() => 0), contributing: 0 };
   }
 
-  const perTopic = TOPIC_META.map((_, i) => {
+  const perTopic = topics.map((_, i) => {
     const vals = perStudent.map((a) => a.avgPerTopic[i]);
     return vals.reduce((x, y) => x + y, 0) / vals.length;
   });
@@ -148,15 +158,18 @@ export function classWeakest(students: StudentRounds[]): {
 
 /**
  * How many students are weakest on each topic — the count that makes
- * "19 of 24 are weakest on Numbers" sayable. Same order as TOPIC_META.
+ * "19 of 24 are weakest on Numbers" sayable. Same order as `topics`.
  */
-export function weakestTopicCounts(students: StudentRounds[]): number[] {
-  const counts = TOPIC_META.map(() => 0);
+export function weakestTopicCounts(
+  students: StudentRounds[],
+  topics: TopicMeta[],
+): number[] {
+  const counts = topics.map(() => 0);
   for (const s of students) {
     const scored = scoredRounds(s.rounds);
     if (scored.length === 0) continue;
-    const worst = bestWorstTopic(scored[scored.length - 1])?.worst;
-    const idx = TOPIC_META.findIndex((t) => t.key === worst);
+    const worst = bestWorstTopic(scored[scored.length - 1], topics)?.worst;
+    const idx = topics.findIndex((t) => t.key === worst);
     if (idx >= 0) counts[idx]++;
   }
   return counts;
@@ -170,23 +183,43 @@ export type FunnelInput = {
   rounds: RoundWithTurns[];
 };
 
-export type Funnel = {
-  assigned: number;
-  resumeUploaded: number;
-  started: number;
-  completed: number;
-  scored: number;
+export type FunnelRow = {
+  key: FunnelStage;
+  label: string;
+  /** Short parenthetical shown after the label, or "". */
+  note: string;
+  value: number;
 };
 
 /**
- * Assigned → resume uploaded → started → completed → scored.
- *
- * The resume stage is a real one, not decoration: createSession refuses to
- * create a round until a resume exists, so a student stalled there has
- * literally been unable to begin.
+ * The funnel is an ORDERED LIST, not a fixed-shape object, because its stages
+ * vary by tenant: the interview track gates on a resume upload and the
+ * clinical track has no resume at all. A list lets the renderer stay dumb and
+ * lets a tenant drop a stage without leaving a permanent zero on the chart.
  */
-export function assignmentFunnel(rows: FunnelInput[]): Funnel {
-  return {
+export type Funnel = FunnelRow[];
+
+const STAGE_COPY: Record<FunnelStage, { label: string; note: string }> = {
+  assigned: { label: "Assigned", note: "" },
+  resumeUploaded: { label: "Resume uploaded", note: "required to start" },
+  started: { label: "Started a session", note: "" },
+  completed: { label: "Completed one", note: "" },
+  scored: { label: "Has scores", note: "" },
+};
+
+/**
+ * Assigned → [resume uploaded] → started → completed → scored, restricted to
+ * the stages this tenant actually has.
+ *
+ * Where it applies, the resume stage is a real one and not decoration:
+ * createSession refuses to create a round until a resume exists, so a student
+ * stalled there has literally been unable to begin.
+ */
+export function assignmentFunnel(
+  rows: FunnelInput[],
+  stages: FunnelStage[],
+): Funnel {
+  const value: Record<FunnelStage, number> = {
     assigned: rows.length,
     resumeUploaded: rows.filter((r) => r.hasResume).length,
     started: rows.filter((r) => r.rounds.length > 0).length,
@@ -195,6 +228,8 @@ export function assignmentFunnel(rows: FunnelInput[]): Funnel {
     ).length,
     scored: rows.filter((r) => scoredRounds(r.rounds).length > 0).length,
   };
+
+  return stages.map((key) => ({ key, ...STAGE_COPY[key], value: value[key] }));
 }
 
 // ─────────────────────────── did it work ───────────────────────────
@@ -205,7 +240,10 @@ export function assignmentFunnel(rows: FunnelInput[]): Funnel {
  * there is no "improvement" to speak of, and including them drags the
  * delta toward zero for no reason.
  */
-export function cohortFirstVsLatest(students: StudentRounds[]): {
+export function cohortFirstVsLatest(
+  students: StudentRounds[],
+  topics: TopicMeta[],
+): {
   first: number;
   latest: number;
   students: number;
@@ -214,11 +252,11 @@ export function cohortFirstVsLatest(students: StudentRounds[]): {
     .map((s) => scoredRounds(s.rounds))
     .filter((rounds) => rounds.length >= 2)
     .map((rounds) => {
-      const firstScores = firstTopicScores(rounds[0]);
+      const firstScores = firstTopicScores(rounds[0], topics);
       const first =
-        TOPIC_META.reduce((n, t) => n + (firstScores[t.key] ?? 0), 0) /
-        TOPIC_META.length;
-      return { first, latest: overallScore(rounds[rounds.length - 1]) };
+        topics.reduce((n, t) => n + (firstScores[t.key] ?? 0), 0) /
+        topics.length;
+      return { first, latest: overallScore(rounds[rounds.length - 1], topics) };
     });
 
   if (pairs.length === 0) return null;
@@ -252,7 +290,10 @@ export type CohortStats = {
  * per-round helpers the student's own dashboard uses, so an educator and a
  * student looking at the same session never see two different scores.
  */
-export function cohortStats(students: StudentRounds[]): CohortStats {
+export function cohortStats(
+  students: StudentRounds[],
+  topics: TopicMeta[],
+): CohortStats {
   const allRounds = students.flatMap((s) => s.rounds);
   const scored = scoredRounds(allRounds);
 
@@ -260,7 +301,7 @@ export function cohortStats(students: StudentRounds[]): CohortStats {
     .map(sessionDurationSeconds)
     .filter((v): v is number => v != null);
 
-  const stats = allRounds.map((r) => adoptionStats(r));
+  const stats = allRounds.map((r) => adoptionStats(r, topics));
   const adopted = stats.reduce((n, s) => n + s.adopted, 0);
   const denom = stats.reduce(
     (n, s) => n + s.suggestion + s.repeated + s.adopted,
@@ -273,7 +314,7 @@ export function cohortStats(students: StudentRounds[]): CohortStats {
     activeStudents: students.filter((s) => scoredRounds(s.rounds).length > 0)
       .length,
     avgScore: scored.length
-      ? scored.reduce((n, r) => n + overallScore(r), 0) / scored.length
+      ? scored.reduce((n, r) => n + overallScore(r, topics), 0) / scored.length
       : null,
     avgDurationSeconds: durations.length
       ? durations.reduce((a, b) => a + b, 0) / durations.length
@@ -305,6 +346,7 @@ export type CohortProgress = {
  */
 export function cohortProgress(
   students: StudentRounds[],
+  topics: TopicMeta[],
   minStudents = 2,
 ): CohortProgress {
   const perStudent = students
@@ -314,7 +356,7 @@ export function cohortProgress(
   const depth = Math.max(0, ...perStudent.map((r) => r.length));
 
   const points: CohortProgress["points"] = [];
-  const perTopicValues = TOPIC_META.map(() => [] as number[]);
+  const perTopicValues = topics.map(() => [] as number[]);
 
   for (let i = 0; i < depth; i++) {
     const atOrdinal = perStudent
@@ -325,12 +367,13 @@ export function cohortProgress(
     points.push({
       label: `Session ${i + 1}`,
       value:
-        atOrdinal.reduce((n, r) => n + overallScore(r), 0) / atOrdinal.length,
+        atOrdinal.reduce((n, r) => n + overallScore(r, topics), 0) /
+        atOrdinal.length,
       students: atOrdinal.length,
     });
 
-    const latest = atOrdinal.map((r) => latestTopicScores(r));
-    TOPIC_META.forEach((t, ti) => {
+    const latest = atOrdinal.map((r) => latestTopicScores(r, topics));
+    topics.forEach((t, ti) => {
       perTopicValues[ti].push(
         latest.reduce((n, l) => n + (l[t.key] ?? 0), 0) / latest.length,
       );
@@ -339,7 +382,7 @@ export function cohortProgress(
 
   return {
     points,
-    perTopic: TOPIC_META.map((t, ti) => ({
+    perTopic: topics.map((t, ti) => ({
       key: t.key,
       label: t.label,
       color: t.color,

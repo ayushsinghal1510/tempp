@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { requireEducatorOrgId } from "@/lib/practice/access";
 import { prisma } from "@/lib/db";
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import { EDUCATOR_NAV } from "@/lib/nav";
+import { educatorNav } from "@/lib/nav";
 import { orgStudentRounds } from "@/lib/practice/educatorQueries";
 import { cohortStats, stuckTopics } from "@/lib/practice/educatorMetrics";
 import KpiCard from "@/components/practice/KpiCard";
@@ -17,7 +17,7 @@ import {
   topicLabel,
 } from "@/lib/practice/metrics";
 import { summarizeStats, qualitativeTrend } from "@/lib/practice/summarize";
-import { TOPIC_META } from "@/lib/practice/topics";
+import { tenantConfig, topicsFor } from "@/lib/tenants/config";
 import { DEGREE_LABEL } from "@/lib/research/expectationMatrix";
 import SessionsChart from "@/components/charts/bklit/SessionsChart";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
@@ -38,7 +38,9 @@ export default async function EducatorStudentPage({
 }) {
   const { id } = await params;
   const user = await requireUser(["practice_admin"], "/educator/login");
+  const unitPlural = tenantConfig(user.tenant).copy.unitPlural;
   const orgId = await requireEducatorOrgId(user.id);
+  const topics = topicsFor(user.tenant);
 
   // Sourced from the org-scoped query, so a student with no assignment from
   // this educator simply isn't here — no separate authorisation step needed.
@@ -51,26 +53,28 @@ export default async function EducatorStudentPage({
     select: { course: true, cgpa: true },
   });
 
-  const stats = aggregate(student.rounds);
+  const stats = aggregate(student.rounds, topics);
   // Same helper the class and company pages use, over a one-student cohort —
   // so "average score" on this page is the same computation as everywhere else.
-  const solo = cohortStats([student]);
-  const stuck = stuckTopics(student.rounds);
+  const solo = cohortStats([student], topics);
+  const stuck = stuckTopics(student.rounds, topics);
   const scored = student.rounds.filter((r) =>
     r.turns.some((t) => t.topics != null),
   );
 
   const timeline = student.rounds.map((r, i) => ({
     label: `S${i + 1}`,
-    value: r.turns.some((t) => t.topics != null) ? overallScore(r) : 0,
+    value: r.turns.some((t) => t.topics != null) ? overallScore(r, topics) : 0,
   }));
 
-  const categorySeries = TOPIC_META.map((t) => ({
+  const categorySeries = topics.map((t) => ({
     key: t.key,
     label: t.label,
     color: t.color,
     values: student.rounds.map((r) =>
-      r.turns.some((tn) => tn.topics != null) ? latestTopicScores(r)[t.key] : 0,
+      r.turns.some((tn) => tn.topics != null)
+        ? latestTopicScores(r, topics)[t.key]
+        : 0,
     ),
   }));
 
@@ -86,7 +90,7 @@ export default async function EducatorStudentPage({
       : [];
 
   return (
-    <DashboardShell user={user} nav={EDUCATOR_NAV} title={student.name}>
+    <DashboardShell user={user} nav={educatorNav(unitPlural)} title={student.name}>
       <div className="space-y-6">
         <Link
           href="/educator/students"
@@ -105,7 +109,7 @@ export default async function EducatorStudentPage({
         </section>
 
         <div className="card p-5 text-sm font-medium text-ink">
-          {summarizeStats(stats)}
+          {summarizeStats(stats, topics)}
         </div>
 
         {stuck.length > 0 && (
@@ -121,7 +125,7 @@ export default async function EducatorStudentPage({
                   key={s.topicKey}
                   className="rounded-md bg-danger-soft px-2.5 py-1 text-sm font-medium text-danger"
                 >
-                  {topicLabel(s.topicKey)} — raised {s.repeated}×, currently{" "}
+                  {topicLabel(s.topicKey, topics)} — raised {s.repeated}×, currently{" "}
                   {s.score.toFixed(1)}
                 </span>
               ))}
@@ -182,7 +186,7 @@ export default async function EducatorStudentPage({
               <h3 className="font-semibold text-ink">Average shape</h3>
               <div className="mt-4">
                 <TopicRadar
-                  axes={TOPIC_META.map((t) => t.label)}
+                  axes={topics.map((t) => t.label)}
                   series={radarSeries}
                   max={10}
                 />
@@ -212,7 +216,7 @@ export default async function EducatorStudentPage({
                 </thead>
                 <tbody>
                   {student.rounds.map((r, i) => {
-                    const improvement = sessionImprovement(r);
+                    const improvement = sessionImprovement(r, topics);
                     return (
                       <tr key={r.id} className="border-b border-line last:border-0">
                         <td className="py-2.5 font-medium text-ink">
