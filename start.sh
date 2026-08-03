@@ -31,16 +31,31 @@ echo "  using ${DATABASE_URL%%@*}@…(hidden)"
 
 # ── 2. Dependencies ─────────────────────────────────────────────────────────
 step "Ensuring dependencies are installed"
-if [ -d node_modules ] && [ -d node_modules/next ]; then
+# Check the actual EXECUTABLES, not just that a directory exists. A partial or
+# interrupted install leaves node_modules/next and node_modules/prisma in place
+# as empty husks with no package.json and no node_modules/.bin at all — which
+# passed the old directory check while nothing was runnable.
+if [ -x node_modules/.bin/next ] && [ -x node_modules/.bin/prisma ]; then
   echo "  present."
 else
+  echo "  incomplete install — repairing."
   npm install
 fi
 
 # ── 3. Schema + client ──────────────────────────────────────────────────────
 step "Applying migrations"
-npx prisma migrate deploy
-npx prisma generate >/dev/null
+# ./node_modules/.bin/prisma, NEVER `npx prisma`. When the local binary is
+# missing npx silently falls back to the REGISTRY and pulls the latest major —
+# prisma 7, which dropped `url`/`directUrl` from the datasource block and fails
+# this schema with P1012. That error reads like the schema is wrong; it isn't,
+# the CLI is just the wrong major. This project is pinned to prisma 6.
+PRISMA=./node_modules/.bin/prisma
+if [ ! -x "$PRISMA" ]; then
+  echo "  ✗ $PRISMA missing. Run: npm install" >&2
+  exit 1
+fi
+"$PRISMA" migrate deploy
+"$PRISMA" generate >/dev/null
 
 # ── 4. Seed (only if empty, unless SEED=force) ──────────────────────────────
 COUNT="$(node -e "

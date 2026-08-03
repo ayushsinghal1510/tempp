@@ -9,13 +9,13 @@ import {
   sessionDurationSeconds,
   sessionImprovement,
 } from "@/lib/practice/metrics";
-import { topicsFor } from "@/lib/tenants/config";
+import { tenantConfig } from "@/lib/tenants/config";
 
 export const dynamic = "force-dynamic";
 
 export default async function PracticeSessionsPage() {
   const user = await requireUser(["practice"], "/practice/login");
-  const topics = topicsFor(user.tenant);
+  const { topics, copy } = tenantConfig(user.tenant);
   const rounds = await getUserRoundsWithCompany(user.id);
 
   // Number sessions within their own company (or the legacy/no-company
@@ -47,17 +47,25 @@ export default async function PracticeSessionsPage() {
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
-      <PracticeHeader userName={user.name} />
+      <PracticeHeader userName={user.name} tenant={user.tenant} />
 
       <div className="mx-auto w-full max-w-[1800px] space-y-6 px-6 py-10">
         <section className="card p-6">
-          <h1 className="text-xl font-bold text-ink">All sessions</h1>
+          <h1 className="text-xl font-bold text-ink">
+            All {copy.sessionNoun}s
+          </h1>
           <p className="mt-1 text-sm text-muted">
-            Every practice session you&apos;ve run, across every company.
+            Every {copy.sessionNoun} you&apos;ve run, across every{" "}
+            {copy.unitSingular}.
           </p>
         </section>
 
-        <SessionsTable sessions={rows} topics={topics} showCompanyColumn />
+        <SessionsTable
+          sessions={rows}
+          topics={topics}
+          showCompanyColumn
+          unitTitle={copy.unitTitle}
+        />
       </div>
     </main>
   );

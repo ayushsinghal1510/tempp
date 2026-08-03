@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import PasswordField from "@/components/ui/PasswordField";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -53,21 +54,11 @@ export default function LoginForm() {
           placeholder="you@university.edu"
         />
       </div>
-      <div>
-        <label className="block text-sm font-medium" htmlFor="password">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          required
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-          placeholder="••••••••"
-        />
-      </div>
+      <PasswordField
+        value={password}
+        onChange={setPassword}
+        autoComplete="current-password"
+      />
 
       {error && (
         <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">

@@ -26,7 +26,7 @@ export default async function EducatorSessionPage({
   const { id } = await params;
   const user = await requireUser(["practice_admin"], "/educator/login");
   const unitPlural = tenantConfig(user.tenant).copy.unitPlural;
-  const { topics, track } = tenantConfig(user.tenant);
+  const { topics, track, copy } = tenantConfig(user.tenant);
 
   // The single choke point for the drill/assessment split. Decided here,
   // before any turn content is read — not hidden in the markup below.
@@ -205,7 +205,7 @@ export default async function EducatorSessionPage({
                     {turn.speak && (
                       <p className="mt-1 text-sm text-ink">
                         <span className="text-muted">
-                          {track === "clinical" ? "Patient" : "Coach"}:{" "}
+                          {copy.agentNoun}:{" "}
                         </span>
                         {turn.speak}
                       </p>

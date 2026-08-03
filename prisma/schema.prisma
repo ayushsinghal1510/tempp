@@ -27,6 +27,10 @@ enum Role {
   // which is the university-side placement officer bound to a University and
   // the Cohort/Student tree.
   practice_admin
+  // Admissions counsellor on the calling track (tenant `nimc`). Dials leads
+  // over PSTN and reads back the transcript. Owns no companies and runs no
+  // rounds — the whole surface is the dialler and the call history.
+  nimc_counsellor
 }
 
 // Whether the educator may see the transcript + recording of the rounds a
@@ -61,12 +65,23 @@ enum PracticeCompanyStatus {
 //         immediately, and sessions are recorded and transcribed but never
 //         scored. No rubric, no companies, no scenarios, no assignments.
 //
-// All three share every model, route and chart below — the tenant selects a
+//   nimc → the outbound calling track. A counsellor types a phone number and
+//          the agent dials it over PSTN (call.voxio.in/plivo/outbound rather
+//          than the WebRTC offer every other tenant uses). The same webhook
+//          delivers the transcript, but the per-turn extraction is flat
+//          strings (name, course, percentage) instead of scored topic dicts.
+//          Nothing is scored, so `topics` is empty here for the same reason
+//          it is on `cus`.
+//
+// All four share every model, route and chart below — the tenant selects a
 // rubric, a prompt and a set of feature flags, not a separate schema.
 enum Tenant {
   jer
   nim
   cus
+  nimc
+  mm
+  pr
 }
 
 // PracticeCompany does triple duty across the tenants: an employer to
@@ -119,6 +134,33 @@ enum RoundStatus {
 enum Speaker {
   student
   agent
+}
+
+// Who spoke on a `nimc` outbound call. Kept separate from `Speaker` because
+// the other end of this call is a prospective student who has no account here
+// — calling them `student` would collide with the practice-track meaning.
+enum CallSpeaker {
+  agent
+  lead
+}
+
+// How an outbound call ended.
+//
+// Only `connected` and `declined_immediately` are inferable from what we
+// receive today: the webhook fires on the graph's ask_for_input node, so a
+// call that never connects produces no events at all and `turns == 0` is our
+// proxy for it. The remaining values need a Plivo status callback we do not
+// consume yet — they are declared now so adding that callback later is a
+// writer change rather than a migration.
+enum CallOutcome {
+  connected
+  no_answer
+  busy
+  invalid_number
+  wrong_person
+  declined_immediately
+  callback_requested
+  voicemail
 }
 
 // Company salary band. Derived from salaryLpa on the vacancy:
@@ -192,8 +234,10 @@ model User {
   practiceRounds      PracticeRound[] // populated only when role = practice
   practiceCompanies   PracticeCompany[] // populated only when role = practice
   practiceResumeChat  PracticeResumeChat[] // populated only when role = practice
+  resumeStudios       PracticeResumeStudio[] // populated only when role = practice
   practiceMemberships PracticeMember[] // populated only when role = practice
   practiceAssignments PracticeAssignment[] // populated only when role = practice
+  leadCalls           LeadCall[] // populated only when role = nimc_counsellor
 
   @@index([universityId])
   @@index([practiceOrgId])
@@ -414,6 +458,8 @@ model PracticeOrg {
   admins    User[]
   groups    PracticeGroup[]
   companies PracticeCompany[]
+  // Only populated on `nimc` orgs. Every other tenant leaves this empty.
+  leads     Lead[]
 
   @@map("practice_orgs")
 }
@@ -518,7 +564,10 @@ model PracticeCompany {
   rounds      PracticeRound[]
   // One per student, not one per company — a shared company carries a
   // separate resume chat for every student assigned to it.
-  resumeChats PracticeResumeChat[]
+  resumeChats   PracticeResumeChat[]
+  // Tailored Resume Studio variants pointed at this company. Base resumes
+  // carry a null companyId and so appear in none of these.
+  resumeStudios PracticeResumeStudio[]
   assignments PracticeAssignment[]
 
   @@index([userId])
@@ -555,6 +604,60 @@ model PracticeResumeChat {
   @@map("practice_resume_chats")
 }
 
+// The Resume Studio artifact — a LaTeX resume the student builds by talking to
+// the agent, distinct from PracticeResumeChat's "coach me on the resume I
+// already have". That one READS a resume; this one WRITES one.
+//
+// Scoped per student, not per company: a resume is a thing you own, not a
+// thing you own once per employer. `companyId` is therefore NULLABLE and
+// means "the base resume". A non-null companyId is a TAILORED VARIANT, forked
+// from the base and then reworded against that company's research — which is
+// why `companyId` is optional here but required on PracticeResumeChat.
+//
+// That nullable column is also why there are two constraints below and not
+// one. Postgres treats NULLs as distinct in a unique index, so
+// @@unique([userId, companyId]) alone constrains the variants but lets a
+// student accumulate unlimited base rows. The migration adds a partial unique
+// index (WHERE company_id IS NULL) to close that; without it the "load the
+// existing studio or create one" path races into duplicates.
+model PracticeResumeStudio {
+  id        String  @id @default(cuid())
+  userId    String  @map("user_id")
+  // null = the base resume. Non-null = a variant tailored for that company.
+  companyId String? @map("company_id")
+
+  // The compiled-in preamble is NOT stored here — only the body the model is
+  // allowed to write. See src/lib/resume/template.ts for why that split is
+  // what keeps LLM output compilable.
+  resumeTex String @map("resume_tex")
+
+  // The student's raw material: parsed PDF text, or whatever facts they typed
+  // in to start. Kept verbatim and separate from resumeTex so the agent always
+  // has the unedited ground truth to check itself against, and so a rewrite
+  // that drops a real job can be caught rather than silently inherited.
+  sourceText String @map("source_text")
+
+  // Full ai-sdk UIMessage[] transcript, stored verbatim — same as
+  // PracticeResumeChat.messages.
+  messages Json @default("[]")
+
+  // Cached compiler output. NULL means "recompile on next read" — every write
+  // to resumeTex nulls it. This is a cache and not a source of truth: a warm
+  // tectonic run is ~3.7s, far too slow to sit in the request path of a page
+  // view or an <iframe> load, but cheap enough to redo whenever it's missing.
+  pdf Bytes?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company PracticeCompany? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@map("practice_resume_studios")
+}
+
 model PracticeRound {
   id           String      @id @default(cuid())
   userId       String      @map("user_id")
@@ -565,6 +668,23 @@ model PracticeRound {
   createdAt    DateTime    @default(now()) @map("created_at")
 
   recordingStatus RecordingStatus @default(none) @map("recording_status")
+
+  // The end-of-session debrief, written once by the webhook when the roleplay
+  // graph's assessor node fires. `mm` only — that track is `scoring: false`
+  // with no rubric, so this prose IS its entire assessment surface rather than
+  // a summary layered on top of per-turn topic scores. Null everywhere else,
+  // and null on an mm round that was abandoned before Mr Muthu ended it.
+  // `overallScore` above is reused for the debrief's single 0-10 number.
+  debriefFeedback String? @map("debrief_feedback")
+  debriefSummary  String? @map("debrief_summary")
+
+  // `pr` only. That track marks out of twenty across four dimensions, which is
+  // a different scale from `overallScore` (0-10) rather than a rescaling of it,
+  // so it gets its own column instead of overloading one number with two
+  // meanings. `outcome` is the pass/retry/fail disposition off the running
+  // score's status prefix — it drives the banner on the results page.
+  debriefTotal    Int?    @map("debrief_total")
+  outcome         String?
 
   // A session now always belongs to a PracticeCompany going forward; nullable
   // only because rows created before this model existed have nothing to
@@ -598,6 +718,22 @@ model PracticeTurn {
   transcript      String
   // The AI's spoken line this turn (agent turns only).
   speak           String?
+  // Which avatar face the agent wore on this line — `mm` only, where the model
+  // returns it alongside `speak` (see muthuPrompt.ts). Stored solely so the
+  // live room can spot a CHANGE between consecutive turns and tell the officer
+  // they just shifted Mr Muthu; the face itself is rendered backend-side into
+  // the video, so nothing here drives what is on screen. Null on every other
+  // tenant, none of which has a second face to switch to.
+  frame           String?
+  // The physical scene events the agent performed on this turn — `pr` only,
+  // where the model returns e.g. ["receipt"] as the customer hands it over.
+  // A string array stored as JSON because it is read whole and never queried
+  // into. The live room turns each tag into something on screen.
+  actions         Json?
+  // The running STATUS_VALUE score at this point in the session ("retry_5"),
+  // `pr` only. Kept per turn rather than only at the end so the score the
+  // trainee watched move is recoverable afterwards.
+  runningScore    String?  @map("running_score")
   // The 6-topic score dict this turn: { posture, framing, approach, numbers,
   // confidence, example } → { description, score (0-10), type_ }. Student
   // turns only; null on agent turns.
@@ -621,4 +757,96 @@ model WebhookEvent {
   receivedAt DateTime @default(now()) @map("received_at")
 
   @@map("webhook_events")
+}
+
+// ───────────────────────────── nimc: outbound calling ─────────────────────────
+//
+// One prospective student, keyed by the number we dial. The counsellor never
+// picks a lead from a list — they type a number and press call — so this row is
+// created as a silent upsert at dial time rather than imported ahead of time.
+// The point of it existing at all is that repeat calls to the same number
+// group: `attemptCount`, and later a callback queue, come for free, with no
+// backfill needed the day we want them.
+//
+// The profile fields are filled in by the agent mid-call and merged by the
+// webhook. Merge rule is deliberately dumb for now: a non-empty value
+// overwrites, an empty one never does, last non-empty wins.
+model Lead {
+  id    String @id @default(cuid())
+  orgId String @map("org_id")
+  // E.164, e.g. +919876543210. Normalised before write — the unique index
+  // below is the whole grouping mechanism, so an unnormalised number silently
+  // creates a duplicate lead.
+  phone String
+
+  name           String?
+  courseInterest String? @map("course_interest")
+  // { level: "12th" | "graduation" | "masters", percent: "82" } as the agent
+  // reported it. Json rather than a Float because the agent returns whatever
+  // the student said ("around 82", "first division") and coercing that at the
+  // webhook would lose the only record of what was actually claimed.
+  academics      Json?
+  // "jaipur" | "outside" — decides the bus-vs-hostel pitch in the prompt.
+  residence      String?
+
+  attemptCount Int       @default(0) @map("attempt_count")
+  lastCallAt   DateTime? @map("last_call_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  org   PracticeOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  calls LeadCall[]
+
+  @@unique([orgId, phone])
+  @@index([orgId])
+  @@map("leads")
+}
+
+// One outbound call. `id` IS the session_id we hand to voxio: the row is
+// written before the phone rings, so correlating the webhook back to it needs
+// no lookup and no waiting on the dial response. (voxio will mint a session_id
+// if we omit one, but then we'd have to wait for the response to learn it.)
+model LeadCall {
+  id           String @id @default(cuid())
+  leadId       String @map("lead_id")
+  counsellorId String @map("counsellor_id")
+  // Denormalised from Lead so the history table renders without a join, and
+  // so the row still says who was dialled if the lead is ever merged.
+  phone        String
+
+  // Null until we can tell. See CallOutcome — most values need a status
+  // callback we don't consume yet.
+  outcome CallOutcome?
+
+  startedAt       DateTime  @default(now()) @map("started_at")
+  endedAt         DateTime? @map("ended_at")
+  durationSeconds Int?      @map("duration_seconds")
+
+  lead       Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  counsellor User        @relation(fields: [counsellorId], references: [id], onDelete: Cascade)
+  turns      LeadTurn[]
+
+  @@index([leadId])
+  @@index([counsellorId, startedAt])
+  @@map("lead_calls")
+}
+
+// One utterance. The direct analogue of PracticeTurn, minus the rubric.
+model LeadTurn {
+  id         String      @id @default(cuid())
+  callId     String      @map("call_id")
+  turnNumber Int         @map("turn_number")
+  speaker    CallSpeaker
+  transcript String
+  // The flat extraction snapshot for this turn — { name, course,
+  // academic_percent, residence } as the agent returned it. Kept even after
+  // it's merged onto Lead, so we can see when a value first appeared and what
+  // it was before a later turn overwrote it.
+  fields     Json?
+  timestamp  DateTime    @default(now())
+
+  call LeadCall @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@map("lead_turns")
 }

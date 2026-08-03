@@ -90,5 +90,7 @@ export function homePathForRole(role: Role): string {
       return "/practice";
     case "practice_admin":
       return "/educator";
+    case "nimc_counsellor":
+      return "/nimc";
   }
 }

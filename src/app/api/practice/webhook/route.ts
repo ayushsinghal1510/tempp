@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { userTag, companyTag, roundTag } from "@/lib/practice/cacheTags";
 import { topicsFor } from "@/lib/tenants/config";
+import { parseRunningScore } from "@/lib/practice/runningScore";
 
 // Voxio pings this URL whenever the workflow reaches the "ask_for_input"
 // stopping node — i.e. once per conversational turn. Confirmed real shape
@@ -75,16 +76,90 @@ function normaliseTopic(value: object): object {
   return value;
 }
 
+/**
+ * The `mm` debrief, if this payload is the one carrying it.
+ *
+ * Fires once per round, at the very end: the roleplay graph's conditional sends
+ * the meeting to an assessor model whose out-node emits score/feedback/summary.
+ * That payload has no `speak` and no `user_input`, so without this it would be
+ * discarded a few lines below as an empty turn and the entire assessment would
+ * be lost with it.
+ *
+ * `score` arrives as a string (see the llm_return_type comment in
+ * muthuCustoms.ts) and is parsed here rather than trusted. A model that ignores
+ * the "bare number only" instruction and returns "7/10" or "8 out of 10" gives
+ * NaN, which is stored as null — the prose is the substance and is kept either
+ * way, so a mangled number downgrades the debrief rather than dropping it.
+ */
+function extractDebrief(body: Record<string, unknown>): {
+  score: number | null;
+  total: number | null;
+  feedback: string;
+  summary: string;
+} | null {
+  let feedback = "";
+  let summary = "";
+  let score: number | null = null;
+  let total: number | null = null;
+  let found = false;
+
+  for (const r of getResponses(body)) {
+    const out = r.out;
+    if (!out) continue;
+
+    const hasFeedback = typeof out.feedback === "string" && out.feedback.trim();
+    const hasSummary = typeof out.summary === "string" && out.summary.trim();
+    const hasTotal = typeof out.total === "string" && out.total.trim();
+
+    // The gate is prose, never `score`. On `pr` a `score` key rides EVERY turn
+    // (it is the running STATUS_VALUE), so treating its presence as "this is
+    // the debrief" would complete the round on the first exchange. Only an out
+    // that carries feedback, summary or a total is an assessment node's.
+    if (!hasFeedback && !hasSummary && !hasTotal) continue;
+    found = true;
+
+    if (hasFeedback) feedback = (out.feedback as string).trim();
+    if (hasSummary) summary = (out.summary as string).trim();
+
+    if (hasTotal) {
+      const parsed = Number.parseInt((out.total as string).trim(), 10);
+      total = Number.isFinite(parsed) ? parsed : null;
+      if (total === null) {
+        console.warn(`[practice webhook] unparseable debrief total: ${out.total}`);
+      }
+    }
+
+    // `mm` returns its 0-10 number as `score` inside this same out. Read only
+    // here, alongside the prose, so it can never collide with `pr`'s per-turn
+    // running score.
+    if (typeof out.score === "string" && out.score.trim()) {
+      const parsed = Number.parseFloat((out.score as string).trim());
+      score = Number.isFinite(parsed) ? parsed : null;
+      if (score === null) {
+        console.warn(`[practice webhook] unparseable debrief score: ${out.score}`);
+      }
+    }
+  }
+
+  return found ? { score, total, feedback, summary } : null;
+}
+
 function extractTurn(
   body: Record<string, unknown>,
   topicKeys: string[],
 ): {
   transcript: string;
   speak: string | null;
+  frame: string | null;
+  actions: string[] | null;
+  runningScore: string | null;
   topics: Record<string, unknown>;
 } {
   let transcript = "";
   let speak: string | null = null;
+  let frame: string | null = null;
+  let actions: string[] | null = null;
+  let runningScore: string | null = null;
   const topics: Record<string, unknown> = {};
 
   for (const r of getResponses(body)) {
@@ -96,13 +171,35 @@ function extractTurn(
     if (typeof out.speak === "string") {
       speak = out.speak;
     }
+    // `mm` only — every other tenant's graph never emits it. Read from the
+    // same `out` as `speak` because they are emitted together by the response
+    // node, so the face stored here is the one worn for this exact line.
+    if (typeof out.frame === "string" && out.frame.trim()) {
+      frame = out.frame.trim();
+    }
+    // `pr` only. Filtered to strings rather than stored raw: this is a model's
+    // free-form list, and one malformed entry must not make the column
+    // unreadable for the room that renders it.
+    if (Array.isArray(out.actions)) {
+      const tags = out.actions.filter(
+        (a): a is string => typeof a === "string" && a.trim().length > 0,
+      );
+      if (tags.length) actions = tags.map((a) => a.trim());
+    }
+    // The turn's own key is `score`; stored under a distinct name because
+    // `overallScore` on the round is a different scale and confusing the two
+    // would be silent and wrong. Validated for shape, not corrected — an
+    // unparseable status renders as no score rather than a guessed one.
+    if (typeof out.score === "string" && out.score.trim()) {
+      runningScore = out.score.trim();
+    }
     for (const key of topicKeys) {
       const value = out[key];
       if (value && typeof value === "object") topics[key] = normaliseTopic(value);
     }
   }
 
-  return { transcript, speak, topics };
+  return { transcript, speak, frame, actions, runningScore, topics };
 }
 
 export async function POST(req: Request) {
@@ -144,11 +241,72 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, note: "unknown round, logged only" });
   }
 
+  // The debrief and the final turn arrive in the SAME payload, confirmed in
+  // live data (2026-07-31): the response node's speak/frame/end_session and the
+  // assessor's score/feedback/summary are both present under `responses[]`.
+  //
+  // So this must NOT return early. An earlier version did, and it silently ate
+  // the last turn of every roleplay — which happens to be the only turn where
+  // Mr Muthu's frame is "normal", so the stored transcript showed him angry
+  // from start to finish and the live room never saw a face change to announce.
+  // Both are extracted, both are written, neither branch owns the response.
   const topicKeys = topicsFor(round.user.tenant).map((t) => t.key);
-  const { transcript, speak, topics } = extractTurn(body, topicKeys);
+  const { transcript, speak, frame, actions, runningScore, topics } =
+    extractTurn(body, topicKeys);
+
+  const debrief = extractDebrief(body);
+  if (debrief) {
+    // `pr` closes on the running score's status prefix, which arrives on the
+    // final turn in this same payload. Falling back to the last stored one
+    // covers the case where the assessment lands in a payload of its own.
+    const finalScore =
+      parseRunningScore(runningScore) ??
+      parseRunningScore(
+        (
+          await prisma.practiceTurn.findFirst({
+            where: { practiceRoundId: roundId, runningScore: { not: null } },
+            orderBy: { turnNumber: "desc" },
+            select: { runningScore: true },
+          })
+        )?.runningScore,
+      );
+
+    await prisma.practiceRound.update({
+      where: { id: roundId },
+      data: {
+        debriefFeedback: debrief.feedback || null,
+        debriefSummary: debrief.summary || null,
+        ...(debrief.total !== null ? { debriefTotal: debrief.total } : {}),
+        ...(finalScore ? { outcome: finalScore.status } : {}),
+        // `pr` has no debrief `score` of its own — its 0-10 number is the
+        // running one, so that is what lands in the shared column. `mm`
+        // supplies its own and takes precedence.
+        ...(debrief.score !== null
+          ? { overallScore: debrief.score }
+          : finalScore?.value !== null && finalScore !== null
+            ? { overallScore: finalScore.value }
+            : {}),
+        // The debrief only ever runs after Mr Muthu ended the meeting, so its
+        // arrival IS the completion signal. `completePracticeRound` still runs
+        // when the student leaves the page; this write is idempotent with it.
+        ...(round.status !== "completed"
+          ? { status: "completed" as const, completedAt: new Date() }
+          : {}),
+      },
+    });
+  }
 
   // Skip the checkpoint right after greeting, before any real exchange happened.
+  // A debrief-only payload lands here too, and must still revalidate — the
+  // results page is otherwise served the pre-debrief copy of the round.
   if (!transcript && !speak) {
+    if (debrief) {
+      const profile = { expire: 60 };
+      revalidateTag(roundTag(roundId), profile);
+      revalidateTag(userTag(round.userId), profile);
+      if (round.companyId) revalidateTag(companyTag(round.companyId), profile);
+      return NextResponse.json({ ok: true, debrief: true });
+    }
     return NextResponse.json({ ok: true, note: "empty turn, logged only" });
   }
 
@@ -161,6 +319,9 @@ export async function POST(req: Request) {
       speaker: "student",
       transcript,
       speak,
+      frame,
+      actions: actions ?? undefined,
+      runningScore,
       topics:
         Object.keys(topics).length > 0
           ? (topics as Prisma.InputJsonValue)

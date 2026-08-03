@@ -30,6 +30,26 @@ export default async function NewOrgCompanyPage() {
           ← {copy.unitTitle}s
         </Link>
 
+        {/* On the roleplay track there is exactly one simulation and it ships
+            with the product, so there is nothing to add. Said plainly here
+            rather than handled by falling through to OrgCompanyForm — that
+            form would offer to research a company, and createOrgCompany would
+            then refuse it on features.company, which is a worse way to learn
+            this than a sentence. */}
+        {features.roleplay ? (
+          <section className="card p-6">
+            <h2 className="font-semibold text-ink">
+              Nothing to add here
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Your {copy.unitPlural} are fixed — the simulation ships with the
+              product and is already live for everyone in your organisation.
+              Open it from the {copy.unitTitle}s list to read exactly what your
+              officers are put through, then use Sessions to see how they
+              handled it.
+            </p>
+          </section>
+        ) : (
         <section className="card p-6">
           <h2 className="font-semibold text-ink">
             Add a {copy.unitSingular}
@@ -51,6 +71,7 @@ export default async function NewOrgCompanyPage() {
             )}
           </div>
         </section>
+        )}
       </div>
     </DashboardShell>
   );

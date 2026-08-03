@@ -1,5 +1,9 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { getUserCompaniesWithRounds } from "@/lib/practice/cachedQueries";
+import { resumeChatCompanyIds } from "@/lib/practice/access";
+import { upNextFrom } from "@/lib/practice/upNext";
+import UpNextCards from "@/components/practice/UpNextCards";
 import PracticeHeader from "@/components/practice/PracticeHeader";
 import KpiCard from "@/components/practice/KpiCard";
 import ChartInfoButton from "@/components/practice/ChartInfoButton";
@@ -26,6 +30,12 @@ export default async function PracticeHomePage() {
   const user = await requireUser(["practice"], "/practice/login");
   const { topics, features, copy } = tenantConfig(user.tenant);
   const companies = await getUserCompaniesWithRounds(user.id);
+
+  // Only jer gates on a resume, so only jer pays for the lookup.
+  const resumeIds = features.resume
+    ? await resumeChatCompanyIds(user.id)
+    : new Set<string>();
+  const cards = upNextFrom(companies, user.tenant, resumeIds);
 
   const allRounds = companies.flatMap((c) => c.rounds);
   const overall = aggregate(allRounds, topics);
@@ -72,42 +82,70 @@ export default async function PracticeHomePage() {
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
-      <PracticeHeader userName={user.name} />
+      <PracticeHeader userName={user.name} tenant={user.tenant} />
 
-      <div className="mx-auto w-full max-w-[1800px] space-y-6 px-6 py-10">
+      <div className="mx-auto w-full max-w-[1800px] space-y-8 px-6 py-10">
+        {/* ── The action, first ────────────────────────────────────────── */}
+        <section className="space-y-4">
+          <div className="flex items-baseline justify-between gap-4">
+            <h1 className="text-xl font-bold text-ink">
+              Hi {user.name.split(" ")[0]} — up next
+            </h1>
+            <Link
+              href="/practice/companies"
+              className="shrink-0 text-sm font-medium text-muted transition hover:text-ink"
+            >
+              All {copy.unitPlural} →
+            </Link>
+          </div>
+
+          {cards.length > 0 ? (
+            <UpNextCards cards={cards} />
+          ) : (
+            <div className="card p-8 text-center text-sm text-muted">
+              {features.company
+                ? `Nothing here yet — register a ${copy.unitSingular} to run your first ${copy.sessionNoun}.`
+                : features.assignments
+                  ? `Nothing assigned yet. Your educator will add ${copy.unitPlural} here.`
+                  : `Nothing published yet. ${copy.unitTitle}s your organisation publishes will appear here.`}
+            </div>
+          )}
+        </section>
+
+        {/* ── The numbers, second ──────────────────────────────────────── */}
         <div className="card p-5 text-sm font-medium text-ink">
           {features.scoring
             ? summarizeStats(overall, topics)
             : `You've run ${overall.totalSessions} ${overall.totalSessions === 1 ? copy.sessionNoun : copy.sessionNoun + "s"}. Open any one to play the recording back and read the transcript.`}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            label="Total sessions"
-            value={String(overall.totalSessions)}
-          />
-          {features.scoring && (
-            <>
-          <KpiCard
-            label="Average improvement"
-            value={qualitativeTrend(overall.avgImprovement)}
-            hoverTitle={
-              overall.avgImprovement != null
-                ? `Exact: ${overall.avgImprovement >= 0 ? "+" : ""}${overall.avgImprovement.toFixed(1)}`
-                : undefined
-            }
-          />
-          <KpiCard
-            label="Best qualities"
-            value={topicLabel(overall.bestTopic, topics)}
-          />
-          <KpiCard
-            label="Worst qualities"
-            value={topicLabel(overall.worstTopic, topics)}
-          />
-            </>
-          )}
-        </div>
+        {/* A lone KPI in a four-column grid reads as three broken cards, so
+            the row only exists where there are scores to fill it. */}
+        {features.scoring && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Total sessions"
+              value={String(overall.totalSessions)}
+            />
+            <KpiCard
+              label="Average improvement"
+              value={qualitativeTrend(overall.avgImprovement)}
+              hoverTitle={
+                overall.avgImprovement != null
+                  ? `Exact: ${overall.avgImprovement >= 0 ? "+" : ""}${overall.avgImprovement.toFixed(1)}`
+                  : undefined
+              }
+            />
+            <KpiCard
+              label="Best qualities"
+              value={topicLabel(overall.bestTopic, topics)}
+            />
+            <KpiCard
+              label="Worst qualities"
+              value={topicLabel(overall.worstTopic, topics)}
+            />
+          </div>
+        )}
 
         {features.scoring && allRounds.length > 0 ? (
           <div className="space-y-6">
@@ -120,7 +158,7 @@ export default async function PracticeHomePage() {
                 />
               </div>
               <p className="mt-0.5 text-xs text-muted">
-                Overall score, across every company.
+                Overall score, across every {copy.unitSingular}.
               </p>
               <div className="mt-4">
                 <SessionsChart
@@ -138,7 +176,8 @@ export default async function PracticeHomePage() {
                   <ChartInfoButton chartTitle="Average shape" steps={RADAR_STEPS} />
                 </div>
                 <p className="mt-0.5 text-xs text-muted">
-                  Averaged across every session, every company.
+                  Averaged across every {copy.sessionNoun}, every{" "}
+                  {copy.unitSingular}.
                 </p>
                 <div className="mt-4">
                   <TopicRadar
@@ -155,7 +194,7 @@ export default async function PracticeHomePage() {
                   <ChartInfoButton chartTitle="Weakest first" steps={BARS_STEPS} />
                 </div>
                 <p className="mt-0.5 text-xs text-muted">
-                  Where to focus next, across all companies.
+                  Where to focus next, across all {copy.unitPlural}.
                 </p>
                 <div className="mt-6">
                   <TopicBars items={barItems} max={10} />
@@ -163,15 +202,15 @@ export default async function PracticeHomePage() {
               </section>
             </div>
           </div>
-        ) : (
+        ) : features.scoring ? (
+          // Only on scored tenants: on cus there is nothing to chart ever, so
+          // an empty analytics slot would be permanent furniture. The "up
+          // next" section above already covers having nothing to do yet.
           <div className="card p-8 text-center text-sm text-muted">
-            {allRounds.length > 0
-              ? `Open a ${copy.unitSingular} to see your sessions.`
-              : features.company
-                ? "No sessions yet — add a company to start your first one."
-                : `No sessions yet — open a ${copy.unitSingular} to start your first one.`}
+            Run your first {copy.sessionNoun} and your progress will show up
+            here.
           </div>
-        )}
+        ) : null}
       </div>
     </main>
   );

@@ -21,6 +21,15 @@ export default async function PracticeCompaniesPage() {
   // never disagree about whether it has passed.
   const now = new Date();
 
+  // Three tenants, so a two-branch ternary can only ever be wrong for one of
+  // them — this used to read "Your scenarios" to a cus user. Keyed off the
+  // feature that actually decides where units come from, not the tenant name.
+  const blurb = features.company
+    ? `Register a ${copy.unitSingular} once, then run as many ${copy.sessionNoun}s against it as you like. Anything your educator assigns shows up here too.`
+    : features.assignments
+      ? `Every ${copy.unitSingular} your educator has assigned you. Run each one as many times as you like — it plays out differently every time.`
+      : `Every ${copy.unitSingular} published to your organisation. Run each one as many times as you like.`;
+
   const rows: CompanyRow[] = companies.map((c) => {
     const stats = aggregate(c.rounds, topics);
     const assignment = c.assignments[0];
@@ -52,26 +61,24 @@ export default async function PracticeCompaniesPage() {
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
-      <PracticeHeader userName={user.name} />
+      <PracticeHeader userName={user.name} tenant={user.tenant} />
 
       <div className="mx-auto w-full max-w-[1800px] space-y-6 px-6 py-10">
         <section className="card p-6">
-          <h1 className="text-xl font-bold text-ink">
-            {features.company ? "Your companies" : "Your scenarios"}
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            {features.company
-              ? "Register a company once, then run as many practice sessions against it as you like. Companies your educator assigns show up here too."
-              : `Every ${copy.sessionNoun} your educator has assigned you. Run each one as many times as you like — the patient responds differently every time.`}
-          </p>
+          <h1 className="text-xl font-bold text-ink">Your {copy.unitPlural}</h1>
+          <p className="mt-1 text-sm text-muted">{blurb}</p>
           {features.company && (
             <div className="mt-4 max-w-md">
               <CompanyForm />
             </div>
           )}
-          <div className="mt-4">
-            <JoinClassForm />
-          </div>
+          {/* No class code on autoEnroll tenants — signup already put them in
+              the one org their admin publishes to. */}
+          {!features.autoEnroll && (
+            <div className="mt-4">
+              <JoinClassForm />
+            </div>
+          )}
         </section>
 
         <CompaniesTable companies={rows} topics={topics} copy={copy} />

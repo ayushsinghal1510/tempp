@@ -172,30 +172,66 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
       "webhook-url": WEBHOOK_URL,
     },
     ...buildVoiceCustoms(voiceSettings),
-    vision_id: {
-      service: "google-ai-studio",
-      model: "gemini-3.1-flash-lite",
-      input: "frames-only",
-      "video-fps": 1,
-      "system-prompt": `You are a visual analyst watching a student during a PRACTICE interview on a video call. Report only what you can actually see in the frames you are given this turn. Be accurate and literal — a wrong observation does real harm. Never invent or guess. When something is unclear or out of frame, say that.
-You report what the body and scene are DOING, never what it means. Report POSTURE, HANDS, EYE CONTACT, ATTIRE, and VISIBLE STATE (only physically observable signs). Report CHANGE across the frames this turn (improved / no change / drifted back / can't tell). Report SCENE — how many people are visible and any situational condition that is the room's fault (poor lighting, bad camera angle, cramped space, second person). If more than one person is visible or you can't tell who is speaking, say so and stop judging anything visual.
-Write two or three short factual sentences in the present tense, then end with this exact tag block on its own lines:
-CHANGE: <improved | no change | drifted back | can't tell>
-PEOPLE: <number you can see>
-SPEAKER_CLEAR: <yes | no>
-SITUATIONAL: <none | short reason>
-FLAGS: <none | comma-separated short factual notes>`,
-      thinking: false,
-      timeout: 40.0,
-    },
+    // vision_id — DISABLED for now. Re-enable by uncommenting this block.
+    //
+    // This is the frame analyser: it samples the student's camera at 1 fps and
+    // returns the posture/eye-contact/scene notes that become turns.visualFlags.
+    // With it commented out the interview runs exactly as before, audio and
+    // scoring untouched — only the visual metrics stop being produced, so any
+    // UI reading visualFlags will show empty rather than wrong.
+    //     vision_id: {
+    //       service: "google-ai-studio",
+    //       model: "gemini-3.1-flash-lite",
+    //       input: "frames-only",
+    //       "video-fps": 1,
+    //       "system-prompt": `You are a visual analyst watching a student during a PRACTICE interview on a video call. Report only what you can actually see in the frames you are given this turn. Be accurate and literal — a wrong observation does real harm. Never invent or guess. When something is unclear or out of frame, say that.
+    // You report what the body and scene are DOING, never what it means. Report POSTURE, HANDS, EYE CONTACT, ATTIRE, and VISIBLE STATE (only physically observable signs). Report CHANGE across the frames this turn (improved / no change / drifted back / can't tell). Report SCENE — how many people are visible and any situational condition that is the room's fault (poor lighting, bad camera angle, cramped space, second person). If more than one person is visible or you can't tell who is speaking, say so and stop judging anything visual.
+    // Write two or three short factual sentences in the present tense, then end with this exact tag block on its own lines:
+    // CHANGE: <improved | no change | drifted back | can't tell>
+    // PEOPLE: <number you can see>
+    // SPEAKER_CLEAR: <yes | no>
+    // SITUATIONAL: <none | short reason>
+    // FLAGS: <none | comma-separated short factual notes>`,
+    //       thinking: false,
+    //       timeout: 40.0,
+    //     },
   };
 }
 
-export const PARTICIPANTS = {
-  ai_participant: "ai",
-  participants: [
-    { name: "user", connections: [{ name: "ai", video: true, audio: true }] },
-    { name: "ai", connections: [{ name: "user", video: true, audio: true }] },
-  ],
-};
+// `connections` is RECEIVE-side, not send-side. Each entry reads "this
+// participant receives these tracks FROM that one" — so the flags under
+// `user` describe what the browser gets, and the flags under `ai` describe
+// what the backend gets. Getting this backwards inverts both legs at once,
+// which is why it is spelled out here.
+//
+// Video is per-track, not global:
+//
+//   cus (custom workflow)   video BOTH ways. That track has an avatar, so the
+//                           backend really does send a video track and the
+//                           browser has something to render.
+//   jer (interview), and    video OFF both ways. There is no avatar — the
+//   practice / clinical     backend's SDP answer carries no m=video line, which
+//                           InterviewRoom.tsx:412 logs explicitly, so asking
+//                           for it only negotiates a receiver that stays black.
+//                           The user->ai leg fed the frame analyser, and
+//                           vision_id is commented out above, so nothing
+//                           consumes those frames now either.
+//
+// Flip a track by changing which constant its branch passes, not by editing
+// the flags — the two shapes are meant to stay distinguishable at the call site.
+function buildParticipants(video: boolean) {
+  return {
+    ai_participant: "ai",
+    participants: [
+      { name: "user", connections: [{ name: "ai", video, audio: true }] },
+      { name: "ai", connections: [{ name: "user", video, audio: true }] },
+    ],
+  };
+}
+
+/** jer interview, practice, clinical — audio only. */
+export const PARTICIPANTS = buildParticipants(false);
+
+/** cus custom-workflow track — avatar video in both directions. */
+export const PARTICIPANTS_VIDEO = buildParticipants(true);
 

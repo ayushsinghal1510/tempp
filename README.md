@@ -33,12 +33,51 @@ npm run dev                 # http://localhost:3000
 
 ### Demo logins (password `password123`)
 
-| Role                | Email                  |
-| ------------------- | ---------------------- |
-| Super admin         | `ops@prepai.com`       |
-| Admin (NIMS)        | `tpo@nims.edu`         |
-| Student · Ready     | `aarav.mehta@nims.edu` |
-| Student · Unlocked  | `ananya.rao@nims.edu`  |
+Four tenants, four login pages. **The page matters** — `src/proxy.ts` bounces
+you back to your own section's login if you try the wrong one, which looks
+exactly like a rejected password.
+
+**jer** — interview practice · `/login`
+
+| Role               | Email                  |
+| ------------------ | ---------------------- |
+| Super admin        | `ops@prepai.com`       |
+| Admin (NIMS)       | `tpo@nims.edu`         |
+| Admin (LPU)        | `tpo@lpu.edu`          |
+| Student · Ready    | `aarav.mehta@nims.edu` |
+| Student · Unlocked | `ananya.rao@nims.edu`  |
+
+Educators sign in separately at `/educator/login` (`educator@demo.edu`), and
+practice-track learners at `/practice/login` (`kapil@jer.com`).
+
+**nim** — medical practice · org *NIM Medical College*
+
+| Role      | Email               | Page               |
+| --------- | ------------------- | ------------------ |
+| Educator  | `educator@nim.com`  | `/educator/login`  |
+| Student   | `student@nim.com`   | `/practice/login`  |
+
+**cus** — custom deployment · org *Custom Deployment*
+
+| Role            | Email            | Page              |
+| --------------- | ---------------- | ----------------- |
+| Workspace admin | `admin@cus.com`  | `/educator/login` |
+| User            | `user@cus.com`   | `/practice/login` |
+
+**nimc** — outbound admissions calling · org *NIMS Admissions* · `/nimc/login`
+
+| Role       | Email                  |
+| ---------- | ---------------------- |
+| Counsellor | `sneha@nimc.com`       |
+| Counsellor | `counsellor@nimc.com`  |
+
+No signup exists on the nimc track — counsellors are provisioned by
+`npx tsx scripts/seed-nimc.ts` only. Dialling also needs the `NIMC_*` keys in
+`.env`; without them `/api/nimc/call` returns 500 rather than placing a call.
+
+One account per role is listed above. **[docs/logins.md](docs/logins.md)** has
+the complete roster — all 13 jer students, the extra nim students, the
+role→landing-page map, and the re-seeding commands.
 
 ## The privacy architecture (load-bearing)
 

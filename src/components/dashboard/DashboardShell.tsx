@@ -11,6 +11,7 @@ const ROLE_LABEL: Record<SessionUser["role"], string> = {
   // only so this stays exhaustive against the Role enum.
   practice: "Practice",
   practice_admin: "Educator",
+  nimc_counsellor: "Counsellor",
 };
 
 export default function DashboardShell({

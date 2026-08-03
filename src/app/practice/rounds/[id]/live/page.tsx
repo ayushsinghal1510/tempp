@@ -34,6 +34,24 @@ export default async function PracticeInterviewLivePage({
   // there is no company, no resume and no research — so everything below it is
   // skipped entirely rather than computed and discarded.
   if (round.company?.kind === "workflow") {
+    // `mm` stores its row as a workflow too, so the kind alone can't tell the
+    // two apart — the tenant does. On mm the row's greeting/prompt are seeded
+    // copies for the admin to read; the customs the call actually runs on come
+    // from muthuPrompt.ts, which is why nothing from the row is passed here.
+    if (features.roleplay) {
+      return (
+        <InterviewRoom
+          variant="practice"
+          roundId={round.id}
+          // The tenant, not a boolean: `features.roleplay` is true on both mm
+          // and pr, and this is what picks Mr Muthu or Mr Cheryl.
+          roleplay={user.tenant === "pr" ? "pr" : "mm"}
+          candidateName={user.name}
+          kindLabel={round.company.companyName}
+          backHref="/practice"
+        />
+      );
+    }
     return (
       <InterviewRoom
         variant="practice"

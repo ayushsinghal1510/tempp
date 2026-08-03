@@ -227,3 +227,22 @@ export async function getResumeChatFor(
   });
   return rows[0] ?? null;
 }
+
+/**
+ * Which of this user's companies they have already uploaded a resume for.
+ *
+ * The batched form of getResumeChatFor, for callers deciding the same question
+ * about a whole list — the dashboard's "up next" cards need to know whether
+ * each card starts a session or diverts to the upload, and asking per row
+ * would be one query per company. Returns ids only: nothing here should be
+ * pulling resume TEXT into a list render.
+ */
+export async function resumeChatCompanyIds(
+  userId: string,
+): Promise<Set<string>> {
+  const rows = await prisma.practiceResumeChat.findMany({
+    where: { userId },
+    select: { companyId: true },
+  });
+  return new Set(rows.map((r) => r.companyId));
+}

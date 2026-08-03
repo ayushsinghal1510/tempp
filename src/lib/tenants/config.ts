@@ -13,6 +13,23 @@
 //         transcribed and NOT scored — there is no rubric at all here, which
 //         is why `topics` is legitimately empty and `features.scoring` gates
 //         every analytic surface off.
+//   nimc → outbound admissions calling. A counsellor types a phone number and
+//         the agent dials it over PSTN; the webhook returns a transcript plus
+//         flat extracted strings (name, course, percentage) rather than scored
+//         topics. Also unscored, so `topics` is empty here too.
+//   pr → retail service-recovery roleplay. A frontline trainee handles Mr
+//         Cheryl, a firm customer returning a defective shirt. Structurally the
+//         second `mm`: same compiled-in simulation, same two-face avatar. What
+//         it adds is physical scene actions (he hands over a receipt, passes
+//         the shirt, raises his phone) that the room renders on screen, and a
+//         running pass/retry/fail score the trainee can watch move.
+//   mm → conflict-handling roleplay. A user faces a fixed hostile client (Mr
+//         Muthu, an aggrieved aid applicant) rendered as a two-faced avatar
+//         that visibly switches between angry and calm as the user manages
+//         him; the org's admin reads the sessions back. Unscored like cus, but
+//         unlike cus the prompt is compiled in rather than admin-authored —
+//         the difficulty of the simulation IS the product, so it is not
+//         something a customer can accidentally sand down.
 //
 // These are NOT separate apps. They share every route, model, chart and metric.
 // A tenant selects three things and nothing else:
@@ -46,6 +63,17 @@ export type TenantFeatures = {
   scenario: boolean;
   /** Admins author a bare greeting+prompt workflow. */
   workflow: boolean;
+  /**
+   * The session is a fixed, compiled-in roleplay against a multi-face avatar
+   * rather than anything authored in the product. Only `mm`.
+   *
+   * This is separate from `workflow` on purpose: both tracks run the same
+   * PracticeCompany-of-kind-`workflow` plumbing, so this is what tells the live
+   * page which customs builder to hand it to (buildMuthuCustoms vs
+   * buildWorkflowCustoms). `workflow: false` alongside it is what keeps the
+   * educator's authoring form and the save action off the prompt.
+   */
+  roleplay: boolean;
   /**
    * Turns are scored against a rubric. False on `cus`, where the whole point
    * is a plain conversation — every chart, KPI, radar and triage surface is
@@ -83,7 +111,7 @@ export type TenantConfig = {
   label: string;
   /** Email domains that map to this tenant at signup. Lowercase, no "@". */
   domains: string[];
-  track: "interview" | "clinical" | "custom";
+  track: "interview" | "clinical" | "custom" | "calling" | "roleplay";
   topics: TopicMeta[];
   features: TenantFeatures;
   funnelStages: FunnelStage[];
@@ -95,6 +123,17 @@ export type TenantConfig = {
     unitTitle: string;
     /** What a PracticeRound is called to the student. */
     sessionNoun: string;
+    /**
+     * What the AI side of a transcript line is called — the label in front of
+     * `turn.speak` on the round page and the educator's session page.
+     *
+     * Config rather than a `track === "clinical" ? "Patient" : "Coach"` at each
+     * of those two call sites, which is what this replaced. That ternary had no
+     * room for a third answer, and "Coach" is not a harmless default: on `mm`
+     * the voice on the other side is a man shouting at you, and labelling him
+     * the coach misreads the whole transcript.
+     */
+    agentNoun: string;
   };
 };
 
@@ -140,6 +179,7 @@ export const TENANTS: Record<Tenant, TenantConfig> = {
       research: true,
       scenario: false,
       workflow: false,
+      roleplay: false,
       scoring: true,
       assignments: true,
       autoEnroll: false,
@@ -157,6 +197,7 @@ export const TENANTS: Record<Tenant, TenantConfig> = {
       unitPlural: "companies",
       unitTitle: "Company",
       sessionNoun: "interview",
+      agentNoun: "Coach",
     },
   },
   nim: {
@@ -171,6 +212,7 @@ export const TENANTS: Record<Tenant, TenantConfig> = {
       research: false,
       scenario: true,
       workflow: false,
+      roleplay: false,
       scoring: true,
       assignments: true,
       autoEnroll: false,
@@ -185,6 +227,7 @@ export const TENANTS: Record<Tenant, TenantConfig> = {
       unitPlural: "scenarios",
       unitTitle: "Scenario",
       sessionNoun: "encounter",
+      agentNoun: "Patient",
     },
   },
   cus: {
@@ -202,6 +245,7 @@ export const TENANTS: Record<Tenant, TenantConfig> = {
       research: false,
       scenario: false,
       workflow: true,
+      roleplay: false,
       scoring: false,
       assignments: false,
       autoEnroll: true,
@@ -215,6 +259,118 @@ export const TENANTS: Record<Tenant, TenantConfig> = {
       unitPlural: "workflows",
       unitTitle: "Workflow",
       sessionNoun: "session",
+      agentNoun: "Agent",
+    },
+  },
+  nimc: {
+    key: "nimc",
+    label: "Admissions calling",
+    domains: ["nimc.com"],
+    track: "calling",
+    // Empty for the same reason as `cus`: nothing here is scored. The agent
+    // extracts facts (name, course, percentage), not rubric judgements.
+    topics: [],
+    features: {
+      company: false,
+      resume: false,
+      research: false,
+      scenario: false,
+      // The prompt is a fixed admissions script compiled into
+      // src/lib/voice/nimcPrompt.ts, not something an admin authors per-org.
+      workflow: false,
+      roleplay: false,
+      scoring: false,
+      // The counsellor dials whoever they like; there is nothing to assign.
+      assignments: false,
+      autoEnroll: true,
+      courseField: false,
+    },
+    // No student funnel at all — the unit of work is a call, not an enrolment
+    // that progresses through stages. Empty is meant literally, and every
+    // consumer already renders nothing for a zero-length list.
+    funnelStages: [],
+    copy: {
+      unitSingular: "lead",
+      unitPlural: "leads",
+      unitTitle: "Lead",
+      sessionNoun: "call",
+      agentNoun: "Sneha",
+    },
+  },
+  mm: {
+    key: "mm",
+    label: "Conflict roleplay",
+    domains: ["mm.com"],
+    track: "roleplay",
+    // Empty, like cus and nimc. Nothing here is scored — the point of the
+    // exercise is the recording the admin reads back, and putting a six-axis
+    // rubric on "did you survive an angry man" would invent precision that
+    // isn't there. Every consumer already renders nothing for zero topics.
+    topics: [],
+    features: {
+      company: false,
+      resume: false,
+      research: false,
+      scenario: false,
+      // False on purpose, and it is the pair below that matters: the greeting
+      // and prompt are compiled into src/lib/voice/muthuPrompt.ts, so the
+      // educator gets no authoring form and saveWorkflow refuses this tenant.
+      workflow: false,
+      roleplay: true,
+      scoring: false,
+      // One simulation, everyone runs it. Same reasoning as cus — asking an
+      // admin to assign the only thing in the product person by person is
+      // friction with nothing behind it.
+      assignments: false,
+      autoEnroll: true,
+      courseField: false,
+    },
+    // No assignment step and no scores, so — exactly as on cus — the only
+    // stages that carry information are started and completed.
+    funnelStages: ["started", "completed"],
+    copy: {
+      unitSingular: "roleplay",
+      unitPlural: "roleplays",
+      unitTitle: "Roleplay",
+      sessionNoun: "session",
+      agentNoun: "Mr Muthu",
+    },
+  },
+  pr: {
+    key: "pr",
+    label: "Retail service recovery",
+    domains: ["pr.com"],
+    track: "roleplay",
+    // Empty for the same reason as mm. This track IS assessed — out of twenty,
+    // across four dimensions — but that happens once at the end, in prose, not
+    // as a per-turn rubric. `topics` is what drives the radar and the turn-by-
+    // turn timelines, and there is nothing per-turn to put in them.
+    topics: [],
+    features: {
+      company: false,
+      resume: false,
+      research: false,
+      scenario: false,
+      workflow: false,
+      // Same compiled-in-simulation switch as mm. What tells the two apart at
+      // the call site is the tenant key, not this flag — see the live page.
+      roleplay: true,
+      // False despite the /20 debrief: `scoring` gates the six-topic rubric
+      // surfaces (radar, timelines, weakest-first, triage), none of which this
+      // track produces data for. The end-of-session assessment renders through
+      // the roleplay debrief panel instead.
+      scoring: false,
+      assignments: false,
+      autoEnroll: true,
+      courseField: false,
+    },
+    funnelStages: ["started", "completed"],
+    copy: {
+      unitSingular: "roleplay",
+      unitPlural: "roleplays",
+      unitTitle: "Roleplay",
+      sessionNoun: "session",
+      agentNoun: "Mr Cheryl",
     },
   },
 };

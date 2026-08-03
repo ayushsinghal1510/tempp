@@ -31,6 +31,7 @@ export default function SessionsTable({
   sessions,
   topics,
   showCompanyColumn = true,
+  unitTitle,
 }: {
   sessions: SessionRow[];
   /**
@@ -40,6 +41,15 @@ export default function SessionsTable({
    */
   topics: TopicMeta[];
   showCompanyColumn?: boolean;
+  /**
+   * What a unit is called here — the tenant's copy.unitTitle. The column
+   * header and the filter both read it, so a nim student is never offered a
+   * "Company" filter over a list of patient encounters.
+   *
+   * Required, with no default: a default would be one tenant's noun standing
+   * in for the other two, which is the exact bug this prop exists to fix.
+   */
+  unitTitle: string;
 }) {
   const scoring = topics.length > 0;
   const [query, setQuery] = useState("");
@@ -86,9 +96,9 @@ export default function SessionsTable({
             value={companyFilter}
             onChange={(e) => setCompanyFilter(e.target.value)}
             className="w-auto min-w-[11rem]"
-            aria-label="Filter by company"
+            aria-label={`Filter by ${unitTitle.toLowerCase()}`}
           >
-            <option value="all">All companies</option>
+            <option value="all">All {unitTitle.toLowerCase()}s</option>
             {companyOptions.map(([id, name]) => (
               <option key={id} value={id}>
                 {name}
@@ -126,7 +136,9 @@ export default function SessionsTable({
             <thead className="bg-canvas text-xs uppercase tracking-wide text-faint">
               <tr>
                 <th className="px-4 py-2.5">Session</th>
-                {showCompanyColumn && <th className="px-4 py-2.5">Company</th>}
+                {showCompanyColumn && (
+                  <th className="px-4 py-2.5">{unitTitle}</th>
+                )}
                 <th className="px-4 py-2.5">Duration</th>
                 <th className="px-4 py-2.5">Turns</th>
                 {scoring && (

@@ -7,28 +7,44 @@ import { X } from "lucide-react";
 const STORAGE_KEY = "practice_tour_seen";
 const OPEN_EVENT = "practice:open-tour";
 
-const STEPS = [
-  {
-    title: "Companies, once",
-    description:
-      "Register a company once — its research and prep material get reused across every session you run against it.",
-  },
-  {
-    title: "Sessions",
-    description:
-      "Each practice attempt is a session. Run as many as you like under the same company to track your progress over time.",
-  },
-  {
-    title: "Your scores",
-    description:
-      "Every session scores you 0–10 across 6 areas: Posture, Framing, Approach, Numbers, Confidence, Example. Look for the Strong / Good / Improving / Needs work labels for the quick read.",
-  },
-  {
-    title: "Chart help, anytime",
-    description:
-      "Every chart has a small (i) button — click it whenever you want a quick explainer on how to read it.",
-  },
-];
+export type TourCopy = {
+  unitTitle: string;
+  unitSingular: string;
+  unitPlural: string;
+  sessionNoun: string;
+  /** The tenant's rubric labels, named in the scores step. */
+  topicLabels: string[];
+};
+
+/**
+ * Built from the tenant's own nouns and rubric rather than written out.
+ *
+ * The tour previously walked a medical student through "Companies" and then
+ * listed the engineering rubric at them by name — the one screen in the
+ * product whose entire job is orientation was the one most confidently
+ * describing a different product.
+ */
+function stepsFor(copy: TourCopy) {
+  return [
+    {
+      title: `${copy.unitTitle}s, once`,
+      description: `Everything you practise against lives under a ${copy.unitSingular}. Open one and its prep material is reused across every ${copy.sessionNoun} you run against it.`,
+    },
+    {
+      title: `${copy.sessionNoun.charAt(0).toUpperCase()}${copy.sessionNoun.slice(1)}s`,
+      description: `Each attempt is one ${copy.sessionNoun}. Run as many as you like under the same ${copy.unitSingular} to track your progress over time.`,
+    },
+    {
+      title: "Your scores",
+      description: `Every ${copy.sessionNoun} scores you 0–10 across ${copy.topicLabels.length} areas: ${copy.topicLabels.join(", ")}. Look for the Strong / Good / Improving / Needs work labels for the quick read.`,
+    },
+    {
+      title: "Chart help, anytime",
+      description:
+        "Every chart has a small (i) button — click it whenever you want a quick explainer on how to read it.",
+    },
+  ];
+}
 
 /** Dispatch this to manually reopen the tour (see TourTrigger). */
 export function openGuidedTour() {
@@ -37,7 +53,8 @@ export function openGuidedTour() {
   }
 }
 
-export default function GuidedTour() {
+export default function GuidedTour({ copy }: { copy: TourCopy }) {
+  const STEPS = stepsFor(copy);
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
 

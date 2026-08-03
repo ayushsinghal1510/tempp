@@ -31,7 +31,7 @@ import SessionsTable, {
 import SessionsChart from "@/components/charts/bklit/SessionsChart";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
 import TopicBars from "@/components/charts/bklit/TopicBars";
-import { topicsFor } from "@/lib/tenants/config";
+import { tenantConfig } from "@/lib/tenants/config";
 import {
   aggregate,
   latestTopicScores,
@@ -48,6 +48,7 @@ import {
   BARS_STEPS,
 } from "@/lib/practice/chartExplainers";
 import { deadlineState } from "@/lib/practice/deadline";
+import TailorResumeButton from "@/components/practice/TailorResumeButton";
 import CompanySwitcher from "./CompanySwitcher";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +60,7 @@ export default async function PracticeCompanyPage({
 }) {
   const { id } = await params;
   const sessionUser = await requireUser(["practice"], "/practice/login");
-  const topics = topicsFor(sessionUser.tenant);
+  const { topics, features, copy } = tenantConfig(sessionUser.tenant);
 
   // Access first: 404 unless this user may actually use the company. Only
   // then load the (user-scoped) rounds and the rest of the page.
@@ -69,11 +70,16 @@ export default async function PracticeCompanyPage({
     await Promise.all([
     getCompanyWithRounds(id, sessionUser.id),
     getUserCompanyList(sessionUser.id),
-    prisma.user.findUnique({
-      where: { id: sessionUser.id },
-      select: { course: true, cgpa: true },
-    }),
-    getResumeChatFor(sessionUser.id, id),
+    // Only read to build the expectation matrix, which is engineering-shaped
+    // and hidden on every tenant without a course field — so on nim and cus
+    // this query would fetch two columns nothing renders.
+    features.courseField
+      ? prisma.user.findUnique({
+          where: { id: sessionUser.id },
+          select: { course: true, cgpa: true },
+        })
+      : null,
+    features.resume ? getResumeChatFor(sessionUser.id, id) : null,
     prisma.practiceAssignment.findUnique({
       where: { companyId_userId: { companyId: id, userId: sessionUser.id } },
       select: { dueDate: true, unlockedAt: true },
@@ -89,8 +95,10 @@ export default async function PracticeCompanyPage({
   const locked = deadline?.status === "locked";
 
   const stats = aggregate(company.rounds, topics);
-  const profile = tierProfile(company.tier);
-  const research = company.companyResearch as CompanyResearch | null;
+  const profile = features.company ? tierProfile(company.tier) : null;
+  const research = features.research
+    ? (company.companyResearch as CompanyResearch | null)
+    : null;
 
   // Course/CGPA are optional at signup — default to B.Tech Tier 1 so this
   // always has something to show instead of blocking on profile data.
@@ -99,7 +107,9 @@ export default async function PracticeCompanyPage({
   const effectiveCourse = profileUser?.course ?? "btech";
   const effectiveAcademicTier =
     profileUser?.cgpa != null ? academicTierForCgpa(profileUser.cgpa) : "tier_1";
-  const focus = expectationRow(effectiveCourse, effectiveAcademicTier);
+  const focus = features.courseField
+    ? expectationRow(effectiveCourse, effectiveAcademicTier)
+    : null;
 
   const timeline = company.rounds.map((r, i) => ({
     label: `S${i + 1}`,
@@ -145,14 +155,15 @@ export default async function PracticeCompanyPage({
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
-      <PracticeHeader userName={sessionUser.name} />
+      <PracticeHeader userName={sessionUser.name} tenant={sessionUser.tenant} />
 
       <div className="mx-auto w-full max-w-[1800px] space-y-6 px-6 py-10">
         <Link
           href="/practice/companies"
           className="text-sm text-muted hover:text-ink"
         >
-          ← Companies
+          ←{" "}
+          {copy.unitPlural.charAt(0).toUpperCase() + copy.unitPlural.slice(1)}
         </Link>
 
         <section className="card flex flex-wrap items-start justify-between gap-4 p-6">
@@ -171,12 +182,17 @@ export default async function PracticeCompanyPage({
           </div>
           <div className="flex items-center gap-3">
             <CompanySwitcher companies={allCompanies} currentId={company.id} />
-            <Link
-              href={`/practice/companies/${company.id}/resume-chat`}
-              className="rounded-lg border border-line px-4 py-2 text-sm font-semibold text-ink transition hover:border-line-strong"
-            >
-              Resume &amp; career chat
-            </Link>
+            {features.resume && (
+              <>
+                <Link
+                  href={`/practice/companies/${company.id}/resume-chat`}
+                  className="rounded-lg border border-line px-4 py-2 text-sm font-semibold text-ink transition hover:border-line-strong"
+                >
+                  Resume &amp; career chat
+                </Link>
+                <TailorResumeButton companyId={company.id} />
+              </>
+            )}
             {locked ? (
               <div className="text-right">
                 <button
@@ -192,46 +208,59 @@ export default async function PracticeCompanyPage({
                   to reopen.
                 </p>
               </div>
-            ) : resumeChat ? (
-              <form action={createSession.bind(null, company.id)}>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-brand-strong"
-                >
-                  Start new session →
-                </button>
-              </form>
-            ) : (
+            ) : /* The resume branch is jer's alone. Keyed off the feature and
+                  not off `resumeChat` being null, which is also null on every
+                  tenant that has no resumes — that read sent nim and cus
+                  students to "Upload resume to begin". */
+            features.resume && !resumeChat ? (
               <Link
                 href={`/practice/companies/${company.id}/resume-chat`}
-                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-brand-strong"
+                className="rounded-lg bg-[var(--chart-1)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
               >
                 Upload resume to begin →
               </Link>
+            ) : (
+              <form action={createSession.bind(null, company.id)}>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-[var(--chart-1)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+                >
+                  Start new {copy.sessionNoun} →
+                </button>
+              </form>
             )}
           </div>
         </section>
 
-        <div className="card p-5 text-sm font-medium text-ink">
-          {summarizeStats(stats, topics)}
-        </div>
+        {features.scoring && (
+          <>
+            <div className="card p-5 text-sm font-medium text-ink">
+              {summarizeStats(stats, topics)}
+            </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            label="Average improvement"
-            value={qualitativeTrend(stats.avgImprovement)}
-            hoverTitle={
-              stats.avgImprovement != null
-                ? `Exact: ${stats.avgImprovement >= 0 ? "+" : ""}${stats.avgImprovement.toFixed(1)}`
-                : undefined
-            }
-          />
-          <KpiCard label="Best quality" value={topicLabel(stats.bestTopic, topics)} />
-          <KpiCard label="Worst quality" value={topicLabel(stats.worstTopic, topics)} />
-          <div className="card p-4" />
-        </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <KpiCard
+                label="Average improvement"
+                value={qualitativeTrend(stats.avgImprovement)}
+                hoverTitle={
+                  stats.avgImprovement != null
+                    ? `Exact: ${stats.avgImprovement >= 0 ? "+" : ""}${stats.avgImprovement.toFixed(1)}`
+                    : undefined
+                }
+              />
+              <KpiCard
+                label="Best quality"
+                value={topicLabel(stats.bestTopic, topics)}
+              />
+              <KpiCard
+                label="Worst quality"
+                value={topicLabel(stats.worstTopic, topics)}
+              />
+            </div>
+          </>
+        )}
 
-        {company.rounds.length > 0 && (
+        {features.scoring && company.rounds.length > 0 && (
           <div className="space-y-6">
             <section className="card p-6">
               <div className="flex items-center gap-2">
@@ -278,47 +307,62 @@ export default async function PracticeCompanyPage({
           </div>
         )}
 
-        <Collapsible
-          title="Company research & prep"
-          subtitle="What this company tends to ask, plus your personalized focus areas."
-        >
-          <CompanyResearchPanel
-            research={research}
-            companyName={company.companyName}
-          />
-          <section className="card p-6">
-            <h3 className="font-semibold text-ink">
-              What we&apos;ll focus on for you
-            </h3>
-            <p className="mt-0.5 text-xs text-muted">
-              {DEGREE_LABEL[effectiveCourse]} ·{" "}
-              {ACADEMIC_TIER_LABEL[effectiveAcademicTier]}
-              {usedDefaultProfile && (
-                <>
-                  {" "}
-                  — default, add your course &amp; CGPA to{" "}
-                  <Link
-                    href="/practice/signup"
-                    className="text-brand hover:underline"
-                  >
-                    personalize this
-                  </Link>
-                </>
-              )}
-            </p>
-            <div className="mt-4">
-              <FocusTable focus={focus} />
-            </div>
-          </section>
-        </Collapsible>
+        {/* Research is jer's (Groq runs at company creation); the focus table
+            is the engineering degree/CGPA expectation matrix. Neither exists
+            on nim or cus, and the whole panel disappears when both are off
+            rather than collapsing to an empty accordion. */}
+        {(features.research || features.courseField) && (
+          <Collapsible
+            title={`${copy.unitTitle} research & prep`}
+            subtitle={`What this ${copy.unitSingular} tends to ask, plus your personalized focus areas.`}
+          >
+            {features.research && (
+              <CompanyResearchPanel
+                research={research}
+                companyName={company.companyName}
+              />
+            )}
+            {features.courseField && focus && (
+              <section className="card p-6">
+                <h3 className="font-semibold text-ink">
+                  What we&apos;ll focus on for you
+                </h3>
+                <p className="mt-0.5 text-xs text-muted">
+                  {DEGREE_LABEL[effectiveCourse]} ·{" "}
+                  {ACADEMIC_TIER_LABEL[effectiveAcademicTier]}
+                  {usedDefaultProfile && (
+                    <>
+                      {" "}
+                      — default, add your course &amp; CGPA to{" "}
+                      <Link
+                        href="/practice/signup"
+                        className="text-brand hover:underline"
+                      >
+                        personalize this
+                      </Link>
+                    </>
+                  )}
+                </p>
+                <div className="mt-4">
+                  <FocusTable focus={focus} />
+                </div>
+              </section>
+            )}
+          </Collapsible>
+        )}
 
         <section>
-          <h2 className="text-lg font-semibold text-ink">Sessions</h2>
+          <h2 className="text-lg font-semibold text-ink">
+            {copy.sessionNoun.charAt(0).toUpperCase() +
+              copy.sessionNoun.slice(1)}
+            s
+          </h2>
           <div className="mt-3">
             <SessionsTable
               sessions={sessionRows}
               topics={topics}
               showCompanyColumn={false}
+              unitTitle={copy.unitTitle}
             />
           </div>
         </section>

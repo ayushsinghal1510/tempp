@@ -19,6 +19,7 @@ import { bestWorstTopic, sessionImprovement } from "@/lib/practice/metrics";
 import { tenantConfig } from "@/lib/tenants/config";
 import { clinicalRoundMetrics } from "@/lib/practice/clinicalMetrics";
 import ClinicalMetricsPanel from "@/components/practice/ClinicalMetricsPanel";
+import DebriefPanel from "@/components/practice/DebriefPanel";
 import { summarizeStats } from "@/lib/practice/summarize";
 import {
   TURNS_TIMELINE_STEPS,
@@ -35,7 +36,7 @@ export default async function PracticeRoundResultsPage({
 }) {
   const { id } = await params;
   const user = await requireUser(["practice"], "/practice/login");
-  const { topics, track, features } = tenantConfig(user.tenant);
+  const { topics, track, features, copy } = tenantConfig(user.tenant);
 
   const round = await getRoundWithTurns(id);
   if (!round || round.userId !== user.id) notFound();
@@ -143,7 +144,7 @@ export default async function PracticeRoundResultsPage({
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
-      <PracticeHeader userName={user.name} />
+      <PracticeHeader userName={user.name} tenant={user.tenant} />
       <div className="mx-auto w-full max-w-[1400px] space-y-6 px-6 py-10">
         <Link
           href={
@@ -160,9 +161,9 @@ export default async function PracticeRoundResultsPage({
           <h1 className="text-2xl font-bold text-ink">
             {track === "clinical"
               ? "Patient encounter results"
-              : track === "custom"
-                ? "Session"
-                : "Practice interview results"}
+              : features.scoring
+                ? "Practice interview results"
+                : "Session"}
           </h1>
           <p className="mt-1 text-sm text-muted">
             {round.status === "completed" ? "Completed" : "In progress"} ·{" "}
@@ -213,6 +214,22 @@ export default async function PracticeRoundResultsPage({
             />
           </div>
         </section>
+
+        {/* Above the transcript and above the recording's siblings: on the
+            roleplay track this is the result, and the transcript below it is
+            the evidence. Gated on the feature rather than on the columns being
+            non-null so it stays inert for every other tenant, none of which
+            ever writes them. */}
+        {features.roleplay && (
+          <DebriefPanel
+            agentNoun={copy.agentNoun}
+            score={round.overallScore}
+            total={round.debriefTotal}
+            outcome={round.outcome}
+            feedback={round.debriefFeedback}
+            summary={round.debriefSummary}
+          />
+        )}
 
         {clinical && (
           <section className="card p-6">
@@ -291,7 +308,7 @@ export default async function PracticeRoundResultsPage({
                     {turn.speak && (
                       <p className="mt-1 text-sm text-ink">
                         <span className="text-muted">
-                          {track === "clinical" ? "Patient" : "Coach"}:{" "}
+                          {copy.agentNoun}:{" "}
                         </span>
                         {turn.speak}
                       </p>

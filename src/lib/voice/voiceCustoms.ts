@@ -1,13 +1,34 @@
 // Ported from the old app's voiceOptions.js — trimmed to the default providers
-// we actually use (Sarvam TTS + Deepgram streaming STT). No voice-settings UI
+// we actually use (Deepgram TTS + Deepgram streaming STT). No voice-settings UI
 // here; callers use the defaults.
 
-const TTS_SARVAM = {
-  defaults: { voice: "shubh", language: "en-IN" },
-  buildId: ({ voice, language }: { voice?: string; language?: string }) => ({
-    service: "sarvam",
-    voice,
-    language,
+// Shape verified against the backend, not guessed:
+// vx-backend-monorepo/tts/src/tts/clients/streaming_/deepgram_.py
+//
+//   validate_keys(keys = ['model'], config = self.config)     ← REQUIRED
+//   model       = config.get('model', 'aura-2-thalia-en')
+//   sample_rate = config.get('sample-rate', 48_000)
+//   encoding    = config.get('encoding', 'linear16')
+//
+// That is the entire surface. `model` is the only required key and the only
+// one we send — the client reads nothing else, so a `voice` or `language` key
+// here would be accepted and silently ignored. `model` carries the voice:
+// Aura ids are "aura-2-{voice}-{lang}", Flux ids "flux-{voice}-{lang}".
+//
+// sample-rate and encoding are deliberately NOT sent. dcs/voice_/clients_.py
+// `apply_audio_profile()` overwrites both from the transport before building
+// the client — web -> 48000/linear16, call -> 8000/mulaw — so anything we put
+// here is discarded, and hardcoding a rate is how callbot telephony broke
+// before (see the monorepo's temp.md sprint notes).
+//
+// `service` selects the driver: dcs/voice_/clients_.py dispatches
+// tts_service == 'deepgram' to DEEPGRAM_Streaming_TTS.
+const TTS_DEEPGRAM = {
+  defaults: { model: "aura-2-thalia-en" },
+  buildId: ({ model }: { model?: string }) => ({
+    service: "deepgram",
+    // Not conditional: omitting it raises KeyError at client init.
+    model: model || "aura-2-thalia-en",
   }),
 };
 
@@ -21,8 +42,9 @@ const STT_DEEPGRAM_STREAMING = {
 };
 
 const VOICE_SETTING_DEFAULTS = {
-  ttsVoice: "shubh",
-  ttsLanguage: "en-IN",
+  // The voice, selected by model id — see TTS_DEEPGRAM above. There is no
+  // separate ttsVoice/ttsLanguage: the Deepgram client reads neither.
+  ttsModel: "aura-2-thalia-en",
   sttModel: "nova-3",
   sttLanguage: "en-IN",
   grainVoice: false,
@@ -48,7 +70,7 @@ export type VoiceSettings = Partial<typeof VOICE_SETTING_DEFAULTS> & {
 export function buildVoiceCustoms(settings?: VoiceSettings | null) {
   const s = { ...VOICE_SETTING_DEFAULTS, ...(settings ?? {}) };
   return {
-    tts_id: TTS_SARVAM.buildId({ voice: s.ttsVoice, language: s.ttsLanguage }),
+    tts_id: TTS_DEEPGRAM.buildId({ model: s.ttsModel }),
     stt_id: STT_DEEPGRAM_STREAMING.buildId({
       model: s.sttModel,
       language: s.sttLanguage,

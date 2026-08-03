@@ -11,6 +11,7 @@ import ResearchEditor from "@/components/educator/ResearchEditor";
 import ScenarioEditor from "@/components/educator/ScenarioEditor";
 import WorkflowEditor from "@/components/educator/WorkflowEditor";
 import { normaliseWorkflow } from "@/lib/voice/workflowCustoms";
+import WorkflowReadout from "@/components/educator/WorkflowReadout";
 import type { ClinicalScenario } from "@/lib/research/scenarioGeneration";
 import PublishToggle from "@/components/educator/PublishToggle";
 import AssignPanel from "@/components/educator/AssignPanel";
@@ -89,6 +90,10 @@ export default async function EducatorCompanyPage({
     : null;
   const isWorkflow = company.kind === "workflow";
   const workflow = isWorkflow ? normaliseWorkflow(company.workflow) : null;
+  // `mm` stores its roleplay as a workflow row as well, so the kind alone
+  // cannot tell the two apart — the tenant does. Same discrimination as the
+  // live page. It reads identically and is simply not editable here.
+  const isRoleplay = isWorkflow && tenant.features.roleplay;
 
   return (
     <DashboardShell
@@ -155,14 +160,18 @@ export default async function EducatorCompanyPage({
                 : "Interview brief"}
           </h3>
           <p className="mt-0.5 text-sm text-muted">
-            {isWorkflow
-              ? "This is the whole agent. Saving takes effect on the next session everyone runs — there is no publish step and nothing to assign."
-              : isScenario
-                ? "Generated from your brief. Edit anything that doesn't ring true — this is exactly who your students will be talking to."
-                : "Generated from a live web search. Edit anything that looks wrong — this is what your students read, and what shapes the interviewer."}
+            {isRoleplay
+              ? "The simulation your people are put through, exactly as it runs. It is fixed — the difficulty is the point, so there is nothing here to soften."
+              : isWorkflow
+                ? "This is the whole agent. Saving takes effect on the next session everyone runs — there is no publish step and nothing to assign."
+                : isScenario
+                  ? "Generated from your brief. Edit anything that doesn't ring true — this is exactly who your students will be talking to."
+                  : "Generated from a live web search. Edit anything that looks wrong — this is what your students read, and what shapes the interviewer."}
           </p>
           <div className="mt-5">
-            {isWorkflow && workflow ? (
+            {isRoleplay && workflow ? (
+              <WorkflowReadout workflow={workflow} />
+            ) : isWorkflow && workflow ? (
               <WorkflowEditor
                 companyId={company.id}
                 workflow={workflow}

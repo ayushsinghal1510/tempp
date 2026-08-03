@@ -150,7 +150,10 @@ A short filler word is played automatically before each of your replies, so neve
       },
       "webhook-url": PRACTICE_WEBHOOK_URL,
     },
-    ...buildVoiceCustoms(null),
+    // cus runs its own voice, distinct from the shared default the other
+    // tracks use. The voice IS the model id on Deepgram — there is no separate
+    // voice key — so this one setting is the whole change.
+    ...buildVoiceCustoms({ ttsModel: "aura-2-odysseus-en" }),
     // No vision_id on purpose. The other two tracks score posture/presence off
     // a frame analyser; nothing here reads the video, so paying for a
     // per-second vision model would buy the customer nothing. The webcam

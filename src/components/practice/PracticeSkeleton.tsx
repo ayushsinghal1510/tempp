@@ -1,6 +1,5 @@
 import LogoutButton from "@/components/LogoutButton";
 import ThemeToggle from "@/components/ThemeToggle";
-import PracticeNavTabs from "./PracticeNavTabs";
 
 function Pulse({ className }: { className: string }) {
   return <div className={`animate-pulse rounded-lg bg-line/60 ${className}`} />;
@@ -21,19 +20,23 @@ export default function PracticeSkeleton({
     <main className="min-h-screen bg-canvas text-ink">
       <header className="border-b border-line bg-card">
         <div className="flex items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-2 font-bold text-brand">
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand text-sm text-primary-foreground">
-              P
-            </span>
-            Practice Interview
+          {/* The product name and the nav nouns are the tenant's, and this
+              renders before any tenant lookup could resolve — so it shows the
+              SHAPE of the header rather than a label that would be wrong for
+              two tenants out of three for a frame. */}
+          <div className="flex items-center gap-2">
+            <span className="h-7 w-7 rounded-lg bg-gradient-to-br from-[var(--chart-1)] to-[var(--chart-5)] opacity-40" />
+            <Pulse className="h-4 w-36" />
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
             <LogoutButton redirectTo="/practice/login" />
           </div>
         </div>
-        <div className="px-6">
-          <PracticeNavTabs />
+        <div className="flex gap-4 px-6 pb-3">
+          <Pulse className="h-4 w-14" />
+          <Pulse className="h-4 w-20" />
+          <Pulse className="h-4 w-16" />
         </div>
       </header>
 

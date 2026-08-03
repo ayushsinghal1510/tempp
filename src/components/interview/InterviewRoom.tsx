@@ -7,6 +7,7 @@ import {
   buildCustoms,
   waitForIceGathering,
   PARTICIPANTS,
+  PARTICIPANTS_VIDEO,
   VX_SERVER,
   FLOW_API_KEY,
 } from "@/lib/voice/customs";
@@ -19,6 +20,13 @@ import {
   buildWorkflowCustoms,
   type CustomWorkflow,
 } from "@/lib/voice/workflowCustoms";
+import { buildMuthuCustoms, MUTHU_NAME } from "@/lib/voice/muthuCustoms";
+import { buildCherylCustoms, CHERYL_NAME } from "@/lib/voice/cherylCustoms";
+import {
+  OUTCOME_LABEL,
+  OUTCOME_TONE,
+  parseRunningScore,
+} from "@/lib/practice/runningScore";
 import type { ClinicalScenario } from "@/lib/research/scenarioGeneration";
 import type { CompanyContext } from "@/lib/voice/companyContext";
 import { startRound } from "@/lib/actions/student";
@@ -31,8 +39,175 @@ import { beginBackgroundUpload } from "@/lib/practice/recordingUpload";
 type ConnState = "connecting" | "connected" | "failed";
 type AiState = "waiting" | "listening" | "thinking" | "speaking";
 
+/**
+ * Splits a flat pipe-table string (possibly all on one line with no newlines)
+ * into rows by counting columns. Detects the header row's column count,
+ * then splits the remaining cells into rows of that width.
+ */
+function parseInlineTable(tableStr: string): { header: string[]; body: string[][] } | null {
+  // Remove leading/trailing pipes and split all cells
+  const trimmed = tableStr.trim().replace(/^\||\|$/g, "");
+  const allCells = trimmed.split("|").map((c) => c.trim());
+
+  if (allCells.length < 2) return null;
+
+  // Heuristic: detect column count from the first few cells.
+  // Look for a repeated pattern. Try widths 2-6 (common table widths).
+  // The header is the first `width` cells, skip separator rows (all dashes).
+  for (let width = 2; width <= 6; width++) {
+    if (allCells.length % width === 0 || (allCells.length - width) % width === 0) {
+      const header = allCells.slice(0, width);
+      let restStart = width;
+      // Skip separator row if present (all cells are just dashes/colons)
+      const maybeSep = allCells.slice(width, width * 2);
+      if (maybeSep.length === width && maybeSep.every((c) => /^[-:]+$/.test(c))) {
+        restStart = width * 2;
+      }
+      const rest = allCells.slice(restStart);
+      if (rest.length === 0 || rest.length % width !== 0) continue;
+      const body: string[][] = [];
+      for (let i = 0; i < rest.length; i += width) {
+        body.push(rest.slice(i, i + width));
+      }
+      // Sanity: header should look like labels, not numbers/long text
+      if (header.some((h) => h.length > 0)) {
+        return { header, body };
+      }
+    }
+  }
+  return null;
+}
+
+/** Detects markdown tables in text and renders them as HTML tables, leaving other text as paragraphs. */
+function RichText({ text }: { text: string }) {
+  // Detect if there's a pipe-table anywhere in the text (even inline/single-line).
+  // A table needs at least 2 pipes with content between them repeated.
+  const tableMatch = text.match(/(\|[^|]+(?:\|[^|]*)+\|)/);
+
+  if (!tableMatch) {
+    return <p className="mt-0.5 text-sm leading-relaxed text-ink">{text}</p>;
+  }
+
+  const tableStr = tableMatch[1];
+  const beforeTable = text.slice(0, tableMatch.index).trim();
+  const afterTable = text.slice(tableMatch.index! + tableStr.length).trim();
+
+  const parsed = parseInlineTable(tableStr);
+
+  if (!parsed) {
+    return <p className="mt-0.5 text-sm leading-relaxed text-ink">{text}</p>;
+  }
+
+  const segments: { type: "text" | "table"; content?: string; parsed?: { header: string[]; body: string[][] } }[] = [];
+  if (beforeTable) segments.push({ type: "text", content: beforeTable });
+  segments.push({ type: "table", parsed });
+  if (afterTable) segments.push({ type: "text", content: afterTable });
+
+  return (
+    <>
+      {segments.map((seg, i) => {
+        if (seg.type === "text") {
+          return (
+            <p key={i} className="mt-0.5 text-sm leading-relaxed text-ink">
+              {seg.content}
+            </p>
+          );
+        }
+        const { header, body } = seg.parsed!;
+        return (
+          <div key={i} className="mt-2 overflow-x-auto">
+            <table className="w-full text-xs border-collapse border border-line rounded">
+              <thead>
+                <tr className="bg-canvas">
+                  {header.map((h, hi) => (
+                    <th key={hi} className="border border-line px-2 py-1.5 text-left font-semibold text-muted">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {body.map((row, ri) => (
+                  <tr key={ri} className={ri % 2 === 0 ? "" : "bg-canvas/50"}>
+                    {row.map((cell, ci) => (
+                      <td key={ci} className="border border-line px-2 py-1.5 text-ink">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /** One exchange as stored by the webhook: what the student said, what came back. */
-type LiveTurn = { turnNumber: number; transcript: string; speak: string | null };
+type LiveTurn = {
+  turnNumber: number;
+  transcript: string;
+  speak: string | null;
+  frame: string | null;
+  /** `pr` only — the physical scene events on this turn, e.g. ["receipt"]. */
+  actions?: string[] | null;
+  /** `pr` only — the running STATUS_VALUE score, e.g. "retry_5". */
+  runningScore?: string | null;
+};
+
+/**
+ * The props Mr Cheryl puts on the counter, and what the room shows for each.
+ *
+ * Placeholder imagery on purpose — these are stand-ins until the real assets
+ * exist, and they are external URLs rather than files in /public precisely so
+ * that a missing asset is obvious rather than a silent broken layout.
+ *
+ * `get-details` is not an image: it is the escalation form the trainee is being
+ * asked to raise, so it renders as an actual form. `turn-away` is recorded and
+ * shown as nothing for now — it coincides with the session ending, which the
+ * room already announces on its own.
+ */
+const SCENE_PROPS: Record<
+  string,
+  { label: string; image?: string; form?: true; receipt?: true; recording?: true }
+> = {
+  receipt: {
+    label: "Receipt",
+    receipt: true,
+  },
+  shirt: {
+    label: "The shirt",
+    image:
+      "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=600&q=80",
+  },
+  phone: {
+    label: "His phone",
+    recording: true,
+  },
+  "get-details": { label: "Escalation form", form: true },
+};
+
+/**
+ * The banner shown when Mr Muthu's face changes — `mm` only.
+ *
+ * `tone` is what he moved TO, not a judgement of the officer: `calm` is the
+ * good direction and `angry` is the bad one, and the copy is written to be read
+ * in half a second while someone is mid-conversation and cannot afford to
+ * study it.
+ */
+type MoodShift = { id: number; tone: "calm" | "angry"; text: string };
+
+/** How long a mood banner stays up before fading itself out. */
+const MOOD_BANNER_MS = 6000;
+
+/**
+ * Longest the room will wait for Mr Muthu's closing line to finish before
+ * tearing the call down anyway. Only reached when the VAD never reports him
+ * speaking — otherwise the room leaves as soon as he falls silent.
+ */
+const SESSION_END_MAX_WAIT_MS = 15000;
 
 /**
  * How often the live transcript polls. The turns it reads are written by the
@@ -50,6 +225,7 @@ export default function InterviewRoom({
   drive,
   scenario,
   workflow,
+  roleplay,
   kindLabel,
   backHref,
   variant = "company",
@@ -72,6 +248,21 @@ export default function InterviewRoom({
    * scoring and no vision. Mutually exclusive with `scenario`.
    */
   workflow?: CustomWorkflow;
+  /**
+   * WHICH fixed roleplay this is, or undefined for the tracks that aren't one.
+   * Takes no content prop because there is none to pass — each roleplay's
+   * greeting and prompt are compiled into its own module. Like `workflow` it
+   * renders an avatar, but a two-faced one that switches expression on the
+   * `frame` the model returns each turn. Mutually exclusive with `workflow`
+   * and `scenario`.
+   *
+   * A discriminator rather than the boolean it started as: `features.roleplay`
+   * is now true on two tenants, and the tenant key is the only thing that says
+   * whether the person on the other side is Mr Muthu or Mr Cheryl. Every
+   * truthiness check against this prop still reads as "is this a roleplay",
+   * which is why the branches below did not have to change.
+   */
+  roleplay?: "mm" | "pr";
   kindLabel: string;
   backHref: string;
   /** "practice" runs the generic, deliberately-scored practice workflow instead. */
@@ -79,7 +270,11 @@ export default function InterviewRoom({
 }) {
   const interviewerName =
     variant === "practice"
-      ? (scenario?.patientName ?? drive?.companyName ?? "Practice Interviewer")
+      ? roleplay
+        ? roleplay === "pr"
+          ? CHERYL_NAME
+          : MUTHU_NAME
+        : (scenario?.patientName ?? drive?.companyName ?? "Practice Interviewer")
       : company!.name;
   const router = useRouter();
   const [started, setStarted] = useState(false);
@@ -92,6 +287,25 @@ export default function InterviewRoom({
   const [elapsed, setElapsed] = useState(0);
   const [saving, setSaving] = useState(false);
   const [turns, setTurns] = useState<LiveTurn[]>([]);
+  const [moodShift, setMoodShift] = useState<MoodShift | null>(null);
+  // Roleplay only: the agent has ended the session and the debrief has been
+  // written. Set from the poll, acted on once the closing line has played out.
+  const [sessionEnded, setSessionEnded] = useState(false);
+  // `pr` only. The running score as last returned ("retry_5"), and every scene
+  // action fired so far this session, in the order they happened.
+  const [runningScore, setRunningScore] = useState<string | null>(null);
+  const [sceneActions, setSceneActions] = useState<string[]>([]);
+  const [formDone, setFormDone] = useState(false);
+
+  const parsedRunningScore = parseRunningScore(runningScore);
+  // `turn-away` is in SCENE_PROPS' gaps on purpose — it is recorded on the turn
+  // but has nothing to render, so it falls out here rather than being special-
+  // cased at the render site.
+  const visibleProps = sceneActions
+    .map((key) => ({ key, prop: SCENE_PROPS[key] }))
+    .filter((entry): entry is { key: string; prop: (typeof SCENE_PROPS)[string] } =>
+      Boolean(entry.prop),
+    );
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -108,6 +322,11 @@ export default function InterviewRoom({
   // Read inside the poll without making it a dependency — re-creating the
   // interval on every new turn would reset the timer and drift the cadence.
   const lastTurnRef = useRef(0);
+  // The last face we actually saw, for the same reason: the poll needs to
+  // compare against it without the comparison itself re-arming the interval.
+  // Starts null so the FIRST face of a session is only recorded, never
+  // announced — Mr Muthu opening angry is the premise, not a change.
+  const lastFrameRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!started) return;
@@ -131,7 +350,13 @@ export default function InterviewRoom({
           { cache: "no-store" },
         );
         if (!r.ok || stopped) return;
-        const data = (await r.json()) as { turns: LiveTurn[] };
+        const data = (await r.json()) as {
+          turns: LiveTurn[];
+          status?: string;
+        };
+        // Checked before the early return below, because the payload that
+        // completes the round can carry no new turns at all.
+        if (roleplay && data.status === "completed") setSessionEnded(true);
         if (stopped || !data.turns?.length) return;
 
         lastTurnRef.current = data.turns[data.turns.length - 1].turnNumber;
@@ -139,6 +364,55 @@ export default function InterviewRoom({
         // the last one seen, so what comes back is the delta, not the whole
         // conversation.
         setTurns((prev) => [...prev, ...data.turns]);
+
+        if (roleplay) {
+          // Walk the whole delta in order. A slow poll can return several turns
+          // at once, and only the LAST transition in that batch is still true —
+          // announcing every one of them would flash two contradictory banners
+          // for a mood the officer already moved past.
+          let shift: MoodShift | null = null;
+          for (const turn of data.turns) {
+            if (!turn.frame) continue;
+            const previous = lastFrameRef.current;
+            lastFrameRef.current = turn.frame;
+            if (!previous || previous === turn.frame) continue;
+            shift =
+              turn.frame === "normal"
+                ? {
+                    id: turn.turnNumber,
+                    tone: "calm",
+                    text: `Good job — ${interviewerName} is settling down.`,
+                  }
+                : {
+                    id: turn.turnNumber,
+                    tone: "angry",
+                    text: `You've lost him — ${interviewerName} is agitated again.`,
+                  };
+          }
+          if (shift) setMoodShift(shift);
+
+          // The running score and the scene actions, both `pr` only and both
+          // read off the same delta. Last-wins for the score (it is a running
+          // total, so only the newest is true); actions are collected across
+          // the batch, since two of them landing in one poll are two things
+          // that genuinely happened and both deserve to be shown.
+          const latestScore = [...data.turns]
+            .reverse()
+            .find((t) => t.runningScore)?.runningScore;
+          if (latestScore) setRunningScore(latestScore);
+
+          const fired = data.turns.flatMap((t) => t.actions ?? []);
+          if (fired.length) {
+            setSceneActions((prev) => {
+              // Deduplicated against everything already fired this session:
+              // the prompt says fire each once, but a model that repeats
+              // "shirt" should not reopen a prop the trainee already dealt with.
+              const next = [...prev];
+              for (const a of fired) if (!next.includes(a)) next.push(a);
+              return next;
+            });
+          }
+        }
       } catch {
         // A dropped poll is not worth surfacing — the transcript is a
         // convenience, and the next tick picks up whatever was missed.
@@ -151,7 +425,15 @@ export default function InterviewRoom({
       stopped = true;
       clearInterval(t);
     };
-  }, [started, showTranscript, roundId]);
+  }, [started, showTranscript, roundId, roleplay, interviewerName]);
+
+  // Auto-dismiss, keyed on the banner's id so a second shift arriving while the
+  // first is still up restarts the clock rather than inheriting its remainder.
+  useEffect(() => {
+    if (!moodShift) return;
+    const t = setTimeout(() => setMoodShift(null), MOOD_BANNER_MS);
+    return () => clearTimeout(t);
+  }, [moodShift]);
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -361,11 +643,24 @@ export default function InterviewRoom({
       const customs =
         variant !== "practice"
           ? buildCustoms(company!, candidateName)
-          : workflow
-            ? buildWorkflowCustoms(candidateName, workflow)
-            : scenario
-              ? buildClinicalCustoms(candidateName, scenario)
-              : buildPracticeCustoms(candidateName, drive);
+          : roleplay === "pr"
+            ? buildCherylCustoms(candidateName)
+            : roleplay === "mm"
+              ? buildMuthuCustoms(candidateName)
+              : workflow
+                ? buildWorkflowCustoms(candidateName, workflow)
+                : scenario
+                  ? buildClinicalCustoms(candidateName, scenario)
+                  : buildPracticeCustoms(candidateName, drive);
+
+      // Same branch as above: `workflow` (cus) and the roleplays are the tracks
+      // with an avatar to send video for, and the roleplays' is the point —
+      // its face is what the user reads to know whether they're getting
+      // through. Everything else negotiates audio only, since the backend's
+      // answer carries no m=video line — see the note by PARTICIPANTS in
+      // customs.ts.
+      const participants =
+        workflow || roleplay ? PARTICIPANTS_VIDEO : PARTICIPANTS;
 
       let resp: Response;
       try {
@@ -379,7 +674,7 @@ export default function InterviewRoom({
           body: JSON.stringify({
             sdp: pc.localDescription?.sdp,
             type: pc.localDescription?.type,
-            participants: PARTICIPANTS,
+            participants,
             customs,
             session_id: roundId,
           }),
@@ -719,7 +1014,7 @@ export default function InterviewRoom({
     });
   };
 
-  const leave = async () => {
+  const leaveTo = async (destination: string) => {
     let recordingExpected = false;
     if (variant === "practice") {
       setSaving(true);
@@ -735,8 +1030,52 @@ export default function InterviewRoom({
       // there's no recording.
       await completePracticeRound(roundId, recordingExpected).catch(() => {});
     }
-    router.push(backHref);
+    router.push(destination);
   };
+
+  const leave = () => leaveTo(backHref);
+
+  // Mr Muthu ended the meeting. Tear the call down and send the officer to
+  // their assessment instead of leaving them sitting in a room with a man who
+  // has already walked out.
+  //
+  // This is client-side because it has to be: `trigger_hangup` is implemented
+  // on the callbot (telephony) actions class only — the voicebot one this track
+  // runs on has no equivalent, so nothing on the server can close a web call.
+  //
+  // It waits for `aiSpeaking` to fall rather than firing on the flag, because
+  // the webhook lands while his closing line is still being spoken; navigating
+  // on arrival would cut him off mid-sentence. The timeout is the backstop for
+  // the case where the VAD never reports speech at all (he ended on a turn with
+  // no audio, or the analyser was already torn down), so the room can't hang
+  // here forever waiting for a sound that isn't coming.
+  const autoLeftRef = useRef(false);
+  useEffect(() => {
+    if (!sessionEnded || autoLeftRef.current) return;
+
+    const go = () => {
+      if (autoLeftRef.current) return;
+      autoLeftRef.current = true;
+      void leaveTo(`/practice/rounds/${roundId}`);
+    };
+
+    const backstop = setTimeout(go, SESSION_END_MAX_WAIT_MS);
+    const settle = setInterval(() => {
+      if (!aiSpeaking) {
+        clearInterval(settle);
+        clearTimeout(backstop);
+        go();
+      }
+    }, 500);
+
+    return () => {
+      clearInterval(settle);
+      clearTimeout(backstop);
+    };
+    // `leaveTo` is deliberately not a dependency — it is recreated every render
+    // and re-running this effect would restart both timers on each one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionEnded, aiSpeaking, roundId]);
 
   const fmt = (s: number) =>
     `${Math.floor(s / 60)
@@ -826,7 +1165,191 @@ export default function InterviewRoom({
         </div>
       </header>
 
-      <main className="flex flex-1 overflow-hidden">
+      <main className="relative flex flex-1 overflow-hidden">
+        {/* Mr Muthu's face just changed. Floated over the room rather than
+            placed in the layout: it appears and disappears mid-session, and
+            anything that reflows the video panes every time he calms down or
+            flares up would be more distracting than the news is useful.
+            `pointer-events-none` so it can never swallow a click on the
+            controls underneath it. */}
+        {/* The running score, and the props Mr Cheryl has put on the counter.
+            Pinned to the left rather than floated over the middle: unlike the
+            mood banner these persist for the rest of the session, so they must
+            not sit on top of the video. */}
+        {roleplay === "pr" && (parsedRunningScore || visibleProps.length > 0) && (
+          <aside className="absolute left-4 top-4 z-20 w-56 space-y-3">
+            {parsedRunningScore && (
+              <div className="rounded-xl border border-line bg-card p-3 shadow-lg">
+                <div className="text-xs uppercase tracking-wide text-muted">
+                  Running score
+                </div>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-ink">
+                    {parsedRunningScore.value ?? "—"}
+                    <span className="text-sm font-medium text-muted">/10</span>
+                  </span>
+                  <span
+                    className={`text-xs font-medium ${
+                      OUTCOME_TONE[parsedRunningScore.status] === "success"
+                        ? "text-success"
+                        : OUTCOME_TONE[parsedRunningScore.status] === "danger"
+                          ? "text-danger"
+                          : "text-warning"
+                    }`}
+                  >
+                    {OUTCOME_LABEL[parsedRunningScore.status]}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {visibleProps.map(({ key, prop }) => (
+              <div
+                key={key}
+                className="overflow-hidden rounded-xl border border-line bg-card shadow-lg"
+              >
+                <div className="border-b border-line px-3 py-1.5 text-xs font-medium text-muted">
+                  {prop.label}
+                </div>
+                {prop.receipt ? (
+                  <div className="p-3 space-y-2 text-xs text-ink font-mono">
+                    <div className="text-center border-b border-dashed border-line pb-2">
+                      <div className="font-bold text-sm">STORE RECEIPT</div>
+                      <div className="text-muted">Order #4821</div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span>Polo T-Shirt (M)</span>
+                        <span>$49.99</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Qty</span>
+                        <span>1</span>
+                      </div>
+                    </div>
+                    <div className="border-t border-dashed border-line pt-2 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Subtotal</span>
+                        <span>$49.99</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Tax</span>
+                        <span>$4.50</span>
+                      </div>
+                      <div className="flex justify-between font-bold">
+                        <span>Total</span>
+                        <span>$54.49</span>
+                      </div>
+                    </div>
+                    <div className="text-center text-muted pt-1 border-t border-dashed border-line">
+                      <div>Paid: VISA •••• 3721</div>
+                      <div>14 Jul 2026 • 3:42 PM</div>
+                    </div>
+                  </div>
+                ) : prop.recording ? (
+                  <div className="p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+                      <span className="text-xs font-semibold text-red-400">REC</span>
+                    </div>
+                    <div className="text-xs text-muted">
+                      Recording in progress
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="w-1 bg-red-400/70 rounded-full animate-pulse"
+                          style={{
+                            height: `${8 + Math.random() * 12}px`,
+                            animationDelay: `${i * 0.1}s`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div className="text-[10px] text-muted mt-1">
+                      This call may be recorded for quality and training purposes.
+                    </div>
+                  </div>
+                ) : prop.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={prop.image}
+                    alt={prop.label}
+                    className="h-32 w-full object-cover"
+                  />
+                ) : (
+                  <form
+                    className="space-y-2 p-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setFormDone(true);
+                    }}
+                  >
+                    {formDone ? (
+                      <p className="text-xs text-success">
+                        Form logged. Tell Mr Cheryl it has been submitted.
+                      </p>
+                    ) : (
+                      <>
+                        <input
+                          placeholder="Customer name"
+                          className="w-full rounded-md border border-line bg-canvas px-2 py-1 text-xs text-ink"
+                        />
+                        <input
+                          placeholder="Contact number"
+                          className="w-full rounded-md border border-line bg-canvas px-2 py-1 text-xs text-ink"
+                        />
+                        <input
+                          placeholder="Issue"
+                          className="w-full rounded-md border border-line bg-canvas px-2 py-1 text-xs text-ink"
+                        />
+                        <button
+                          type="submit"
+                          className="w-full rounded-md bg-brand px-2 py-1 text-xs font-medium text-white"
+                        >
+                          Log escalation
+                        </button>
+                      </>
+                    )}
+                  </form>
+                )}
+              </div>
+            ))}
+          </aside>
+        )}
+
+        {sessionEnded && (
+          <div
+            role="status"
+            className="pointer-events-none absolute inset-x-0 top-4 z-30 flex justify-center px-6"
+          >
+            <div className="rounded-full border border-brand bg-card px-4 py-2 text-sm font-medium text-brand shadow-lg">
+              {MUTHU_NAME} has ended the meeting — bringing up your assessment…
+            </div>
+          </div>
+        )}
+
+        {/* Suppressed once the meeting is over: the notice above replaces it,
+            and a "he's calming down" banner is noise next to "he has left". */}
+        {moodShift && !sessionEnded && (
+          <div
+            key={moodShift.id}
+            role="status"
+            className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center px-6"
+          >
+            <div
+              className={`rounded-full border px-4 py-2 text-sm font-medium shadow-lg ${
+                moodShift.tone === "calm"
+                  ? "border-success bg-card text-success"
+                  : "border-warning bg-card text-warning"
+              }`}
+            >
+              {moodShift.text}
+            </div>
+          </div>
+        )}
+
       <div className="flex flex-1 items-center justify-center gap-10 overflow-hidden">
         {/* candidate */}
         <div className="flex flex-col items-center gap-3">
@@ -911,9 +1434,7 @@ export default function InterviewRoom({
                       <div className="text-[10px] font-medium uppercase tracking-wide text-muted">
                         {interviewerName}
                       </div>
-                      <p className="mt-0.5 text-sm leading-relaxed text-ink">
-                        {t.speak}
-                      </p>
+                      <RichText text={t.speak} />
                     </div>
                   )}
                 </div>

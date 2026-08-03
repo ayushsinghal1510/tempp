@@ -359,21 +359,28 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
       "webhook-url": PRACTICE_WEBHOOK_URL,
     },
     ...buildVoiceCustoms(null),
-    vision_id: {
-      service: "google-ai-studio",
-      model: "gemini-3.1-flash-lite",
-      input: "frames-only",
-      "video-fps": 1,
-      "system-prompt": `You are a visual analyst watching a student during a PRACTICE interview on a video call. Report only what you can actually see in the frames you are given this turn. Be accurate and literal — a wrong observation does real harm. Never invent or guess. When something is unclear or out of frame, say that.
-You report what the body and scene are DOING, never what it means. Report POSTURE, HANDS, EYE CONTACT, ATTIRE, and VISIBLE STATE (only physically observable signs). Report CHANGE across the frames this turn (improved / no change / drifted back / can't tell). Report SCENE — how many people are visible and any situational condition that is the room's fault (poor lighting, bad camera angle, cramped space, second person). If more than one person is visible or you can't tell who is speaking, say so and stop judging anything visual.
-Write two or three short factual sentences in the present tense, then end with this exact tag block on its own lines:
-CHANGE: <improved | no change | drifted back | can't tell>
-PEOPLE: <number you can see>
-SPEAKER_CLEAR: <yes | no>
-SITUATIONAL: <none | short reason>
-FLAGS: <none | comma-separated short factual notes>`,
-      thinking: false,
-      timeout: 40.0,
-    },
+    // vision_id — DISABLED for now. Re-enable by uncommenting this block.
+    //
+    // This is the frame analyser: it samples the student's camera at 1 fps and
+    // returns the posture/eye-contact/scene notes that become turns.visualFlags.
+    // With it commented out the interview runs exactly as before, audio and
+    // scoring untouched — only the visual metrics stop being produced, so any
+    // UI reading visualFlags will show empty rather than wrong.
+    //     vision_id: {
+    //       service: "google-ai-studio",
+    //       model: "gemini-3.1-flash-lite",
+    //       input: "frames-only",
+    //       "video-fps": 1,
+    //       "system-prompt": `You are a visual analyst watching a student during a PRACTICE interview on a video call. Report only what you can actually see in the frames you are given this turn. Be accurate and literal — a wrong observation does real harm. Never invent or guess. When something is unclear or out of frame, say that.
+    // You report what the body and scene are DOING, never what it means. Report POSTURE, HANDS, EYE CONTACT, ATTIRE, and VISIBLE STATE (only physically observable signs). Report CHANGE across the frames this turn (improved / no change / drifted back / can't tell). Report SCENE — how many people are visible and any situational condition that is the room's fault (poor lighting, bad camera angle, cramped space, second person). If more than one person is visible or you can't tell who is speaking, say so and stop judging anything visual.
+    // Write two or three short factual sentences in the present tense, then end with this exact tag block on its own lines:
+    // CHANGE: <improved | no change | drifted back | can't tell>
+    // PEOPLE: <number you can see>
+    // SPEAKER_CLEAR: <yes | no>
+    // SITUATIONAL: <none | short reason>
+    // FLAGS: <none | comma-separated short factual notes>`,
+    //       thinking: false,
+    //       timeout: 40.0,
+    //     },
   };
 }

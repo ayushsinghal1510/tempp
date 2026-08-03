@@ -246,9 +246,19 @@ export async function updateWorkflow(
   companyId: string,
   workflow: CustomWorkflow,
 ): Promise<ActionResult> {
-  const { orgId } = await requireEducator();
+  const { orgId, tenant } = await requireEducator();
   const owned = await ownedCompany(orgId, companyId);
   if (!owned) return { error: "Workflow not found." };
+
+  // Refused rather than ignored. `mm` stores its roleplay as a workflow row too
+  // (see tenants/config.ts), but the call is built from muthuPrompt.ts and
+  // never reads that JSON — so a save here would appear to succeed and change
+  // nothing about the next session, which is the worse of the two failures.
+  // The UI already renders it read-only; this is the half that can't be
+  // bypassed by posting to the action directly.
+  if (!tenant.features.workflow) {
+    return { error: "This simulation is fixed and can't be edited." };
+  }
 
   // Re-normalised server-side: this string becomes the agent's system prompt,
   // so it is not trusted for shape just because it came back from our own form.

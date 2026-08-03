@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DEGREES, DEGREE_LABEL } from "@/lib/research/expectationMatrix";
 import Select from "@/components/ui/Select";
+import PasswordField from "@/components/ui/PasswordField";
 import {
   TENANTS,
   tenantForEmail,
@@ -111,22 +112,13 @@ export default function PracticeSignupForm() {
           </p>
         )}
       </div>
-      <div>
-        <label className="block text-sm font-medium" htmlFor="password">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          required
-          minLength={8}
-          autoComplete="new-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-          placeholder="At least 8 characters"
-        />
-      </div>
+      <PasswordField
+        value={password}
+        onChange={setPassword}
+        autoComplete="new-password"
+        minLength={8}
+        placeholder="At least 8 characters"
+      />
       {showCourse && (
       <div className="grid grid-cols-2 gap-3">
         <div>
