@@ -7,6 +7,7 @@ import DashboardShell from "@/components/dashboard/DashboardShell";
 import { educatorNav } from "@/lib/nav";
 import {
   TYPE_BADGE,
+  TYPE_COLOR,
   TYPE_LABEL,
   type TopicDict,
 } from "@/lib/practice/topics";
@@ -14,6 +15,9 @@ import { sessionDurationSeconds, topicLabel } from "@/lib/practice/metrics";
 import { tenantConfig } from "@/lib/tenants/config";
 import { clinicalRoundMetrics } from "@/lib/practice/clinicalMetrics";
 import ClinicalMetricsPanel from "@/components/practice/ClinicalMetricsPanel";
+import RoundResultsRecording from "@/components/practice/RoundResultsRecording";
+import { resolveRecording } from "@/lib/practice/recordingStorage";
+import { type TopicKink } from "@/components/charts/bklit/TopicsTimeline";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +30,7 @@ export default async function EducatorSessionPage({
   const { id } = await params;
   const user = await requireUser(["practice_admin"], "/educator/login");
   const unitPlural = tenantConfig(user.tenant).copy.unitPlural;
-  const { topics, track, copy } = tenantConfig(user.tenant);
+  const { topics, track, features, copy } = tenantConfig(user.tenant);
 
   // The single choke point for the drill/assessment split. Decided here,
   // before any turn content is read — not hidden in the markup below.
@@ -51,6 +55,52 @@ export default async function EducatorSessionPage({
   const hasScores = round.turns.some((t) => t.topics != null);
 
   const duration = sessionDurationSeconds(round);
+
+  // The trajectory the student sees on their own results page, rebuilt here
+  // from the same turn rows. Scores are analytics, so this sits above the
+  // visibility line — a drill shows the graph with no video beside it.
+  const series = topics.map((t) => ({
+    key: t.key,
+    label: t.label,
+    color: t.color,
+    values: round.turns.map((turn) => {
+      const dict = (turn.topics as Record<string, TopicDict> | null)?.[t.key];
+      return typeof dict?.score === "number" ? dict.score : 0;
+    }),
+  }));
+
+  const kinks: TopicKink[] = [];
+  topics.forEach((t) => {
+    round.turns.forEach((turn, index) => {
+      const dict = (turn.topics as Record<string, TopicDict> | null)?.[t.key];
+      if (dict?.type_) {
+        kinks.push({
+          seriesKey: t.key,
+          index,
+          color: TYPE_COLOR[dict.type_] ?? "var(--faint)",
+          label: TYPE_LABEL[dict.type_] ?? dict.type_,
+          description: dict.description,
+        });
+      }
+    });
+  });
+
+  const turnBase = new Date(
+    round.startedAt ?? round.turns[0]?.timestamp ?? new Date(),
+  ).getTime();
+  const turnSeconds = round.turns.map((turn) => {
+    const t = (new Date(turn.timestamp).getTime() - turnBase) / 1000;
+    return Number.isFinite(t) ? Math.max(0, t) : 0;
+  });
+  const maxTurnSec = turnSeconds.length ? Math.max(...turnSeconds) : 0;
+  const fallbackDurationSec = Math.max(duration ?? 0, maxTurnSec, 1);
+
+  // Gated on `content`, not merely resolved and hidden: a drill's video must
+  // not even be looked up here, because the same flag is what makes the
+  // playback route refuse to stream it.
+  const recording = visibility.content
+    ? await resolveRecording(id, round.recordingStatus, round.completedAt)
+    : ({ state: "none" } as const);
 
   // Word counts are analytics, so they sit above the visibility line with the
   // scores. The individual jargon TERMS are transcript content and are gated
@@ -82,6 +132,35 @@ export default async function EducatorSessionPage({
             {duration != null &&
               ` · ${Math.floor(duration / 60)}m ${duration % 60}s`}
           </p>
+        </section>
+
+        <section className="card p-6">
+          <h3 className="font-semibold text-ink">
+            {features.scoring
+              ? `Their ${topics.length} topics over the round`
+              : "Recording"}
+          </h3>
+          <p className="mt-0.5 text-xs text-muted">
+            {features.scoring
+              ? `${topics.map((t) => t.label).join(", ")} — scored 0–10, turn by turn.${
+                  visibility.content
+                    ? " Scrub the replay and the marker moves with it."
+                    : ""
+                }`
+              : "The video of this session."}
+          </p>
+          <div className="mt-4">
+            <RoundResultsRecording
+              roundId={id}
+              recordingState={recording.state}
+              series={series}
+              kinks={kinks}
+              turnSeconds={turnSeconds}
+              fallbackDurationSec={fallbackDurationSec}
+              max={10}
+              showTimeline={features.scoring}
+            />
+          </div>
         </section>
 
         {hasScores && (

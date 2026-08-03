@@ -113,7 +113,9 @@
       "Bash(kill 34890)",
       "Bash(pm2 save *)",
       "Bash(pm2 restart *)",
-      "Bash(echo \"HTTP: $\\(curl -s -o /dev/null -w '%{http_code}' --max-time 20 http://localhost:3000/educator/login\\)\")"
+      "Bash(echo \"HTTP: $\\(curl -s -o /dev/null -w '%{http_code}' --max-time 20 http://localhost:3000/educator/login\\)\")",
+      "Bash(echo \"=== status: $? ===\")",
+      "Bash(awk '/^model PracticeRound /,/^}/' prisma/schema.prisma)"
     ]
   }
 }
