@@ -16,10 +16,18 @@ export type TopicDict = {
   type_?: string;
 };
 
+// `demonstrated` is the one that is not part of the coaching cycle: the student
+// did the thing well without anyone ever raising it. It exists because scores
+// now start at 0 and are earned, and the interviewer is deliberately silent on
+// most turns — without a way to credit unprompted strength, a student who
+// needed no coaching would finish the session near zero for doing everything
+// right. Green like the other two good outcomes, but labelled distinctly so a
+// strength is never mistaken for advice that landed.
 export const TYPE_BADGE: Record<string, string> = {
   suggestion: "bg-warning-soft text-warning",
   acknowledged: "bg-success-soft text-success",
   adopted: "bg-success-soft text-success",
+  demonstrated: "bg-success-soft text-success",
   repeated: "bg-danger-soft text-danger",
 };
 
@@ -27,6 +35,7 @@ export const TYPE_COLOR: Record<string, string> = {
   suggestion: "var(--warning)",
   acknowledged: "var(--success)",
   adopted: "var(--success)",
+  demonstrated: "var(--success)",
   repeated: "var(--danger)",
 };
 
@@ -34,5 +43,6 @@ export const TYPE_LABEL: Record<string, string> = {
   suggestion: "Suggested",
   acknowledged: "Acknowledged",
   adopted: "Adopted",
+  demonstrated: "Strength",
   repeated: "Repeated",
 };

@@ -101,17 +101,34 @@ export type AdoptionStats = {
   suggestion: number;
   acknowledged: number;
   adopted: number;
+  /** Unprompted strengths — counted, but deliberately OUTSIDE `rate`. */
+  demonstrated: number;
   repeated: number;
   /** adopted / (suggestion + repeated + adopted). Null if no kink events at all. */
   rate: number | null;
 };
 
-/** Tallies every turn/topic's kink type_ for this session. */
+/**
+ * Tallies every turn/topic's kink type_ for this session.
+ *
+ * `demonstrated` is counted but kept out of `rate` on purpose. The rate answers
+ * one question — of the points the interviewer actually raised, how many did
+ * the student take up — and it is surfaced as a percentage in six places
+ * (educator triage, cohort analytics, the student report, the CSV export).
+ * A strength nobody had to raise is not evidence that coaching landed, so
+ * folding it in would inflate the number and quietly change what it means.
+ */
 export function adoptionStats(
   round: RoundWithTurns,
   topics: TopicMeta[],
 ): AdoptionStats {
-  const counts = { suggestion: 0, acknowledged: 0, adopted: 0, repeated: 0 };
+  const counts = {
+    suggestion: 0,
+    acknowledged: 0,
+    adopted: 0,
+    demonstrated: 0,
+    repeated: 0,
+  };
   for (const turn of round.turns) {
     const dict = topicsOf(turn);
     for (const t of topics) {

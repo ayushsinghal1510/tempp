@@ -267,19 +267,31 @@ export default function TopicsTimeline({
           }}
         >
           {Array.from(columns.entries()).map(([turnIndex, column]) => {
+            // Pinning a topic isolates its kinks too, not just its line —
+            // otherwise "show me only example" still draws every posture and
+            // framing dot on top of it, which is the opposite of isolating.
+            //
+            // Keyed off `pinned` rather than `active`: `active` includes the
+            // legend hover, and adding/removing markers as the cursor drifts
+            // across the legend makes the whole overlay strobe. Hovering is a
+            // peek at a line; pinning is a decision about the view.
+            const shown = pinned
+              ? column.filter((c) => c.kink.seriesKey === pinned)
+              : column;
+            if (shown.length === 0) return null;
             const f = fractionFor(seconds[turnIndex] ?? domainStart);
-            const hovered = column.find((c) => c.id === hoveredKink);
+            const hovered = shown.find((c) => c.id === hoveredKink);
             // Kink colour is the event type, not the topic, so a column can
             // hold three colours at once. The guide line takes the hovered
             // one's colour, and stays neutral at rest rather than picking one
             // of them arbitrarily and implying the whole column is that type.
-            const uniform = column.every(
-              (c) => c.kink.color === column[0].kink.color,
+            const uniform = shown.every(
+              (c) => c.kink.color === shown[0].kink.color,
             );
             const lineColor = hovered
               ? hovered.kink.color
               : uniform
-                ? column[0].kink.color
+                ? shown[0].kink.color
                 : "var(--faint)";
             return (
               <div
@@ -299,9 +311,9 @@ export default function TopicsTimeline({
                   className="absolute top-0 bottom-0 left-1/2 w-px -translate-x-1/2 transition-opacity"
                   style={{ background: lineColor, opacity: hovered ? 0.9 : 0.22 }}
                 />
-                {column.map(({ kink: k, id, series: s }, i) => {
+                {shown.map(({ kink: k, id, series: s }, i) => {
                   const isKinkActive = hoveredKink === id;
-                  const v = dotFraction(i, column.length);
+                  const v = dotFraction(i, shown.length);
                   const top = `${v * 100}%`;
                   return (
                     <div key={id}>

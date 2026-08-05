@@ -139,10 +139,22 @@ export type TenantConfig = {
 
 // The original rubric. Order matters — it's the axis order on the radar and
 // the series order on every timeline.
+// FIVE topics, not six. `approach` was folded into `framing` — both asked how
+// the answer was BUILT, so a single "you dived in before structuring it"
+// moment had to be arbitrarily filed under one of them and neither score told
+// the truth alone. Must stay in step with TOPIC_KEYS in voice/practiceCustoms.ts.
+//
+// Every surviving topic KEEPS ITS ORIGINAL COLOUR, which is why --chart-3 is
+// now unused here: re-packing the palette would have silently recoloured four
+// topics that did not change, and a student comparing an old session to a new
+// one would see their confidence line change colour for no reason.
+//
+// Rounds recorded before this still carry an `approach` key in their topics
+// JSON. Nothing reads it now, so it is inert rather than lost — old sessions
+// simply render four lines plus posture instead of five.
 const INTERVIEW_TOPICS: TopicMeta[] = [
   { key: "posture", label: "Posture", color: "var(--chart-1)" },
   { key: "framing", label: "Framing", color: "var(--chart-2)" },
-  { key: "approach", label: "Approach", color: "var(--chart-3)" },
   { key: "numbers", label: "Numbers", color: "var(--chart-4)" },
   { key: "confidence", label: "Confidence", color: "var(--chart-5)" },
   { key: "example", label: "Example", color: "var(--brand)" },

@@ -1,21 +1,75 @@
 // The practice-interview workflow — a standalone, deliberately-scored variant
 // of the interview graph in customs.ts. Not a modification of that file: this
-// is a generic (no company/tier) interview whose LLM turn returns a structured
-// 7-element result (speak + 6 topic dicts) instead of free-text coaching, so
-// every turn is scored on the 6-topic rubric as it happens.
+// is a generic (no company/tier) interview where every turn is scored on a
+// 5-topic rubric as it happens.
 //
-// The 6 topics: posture (bundles eye contact + hand gesture — fed by the
-// vision pipeline below), framing, approach, numbers, confidence, example.
-// Each is scored 0-10. A "kink" (description + type_ set) only happens on
-// the turn one of 4 specific events occurs for that topic:
-//   - "suggestion":   the AI just said the coaching point out loud
-//   - "acknowledged": the student verbally acknowledged it the very next turn
-//   - "adopted":      the student is now doing it on their own, unprompted
-//   - "repeated":     the AI had to raise the same point again — it wasn't
-//                     fixed after the first suggestion
+// TWO MODELS, NOT ONE. The turn is split across two llm nodes:
+//   llm       — the interviewer. Returns speak + the two state strings + the
+//               turn kind. Four fields. Nothing about scoring.
+//   llm_score — the scorer. Reads `speak` as INPUT, after it has already been
+//               handed to TTS, and returns the 5 topic dicts. Never speaks.
+//
+// The split is not primarily a latency trick, though it is that too (the
+// interviewer's completion drops from ~18 fields to 4, and `speak` cannot
+// reach TTS until the last field of it is generated). It is mainly a
+// correctness one. When one model wrote both, a topic `description` was a
+// SELF-REPORT — the model asserting it had said something out loud — and the
+// only thing stopping it recording coaching it never delivered was a prompt
+// rule asking it to audit itself (the old "check your own turn before you
+// return it"). The student was then silently marked down for advice nobody
+// gave them. Now the scorer is handed the finished text and can only score
+// what is in it; the invariant is structural and the self-audit is gone.
+//
+// ORDER MATTERS, AND IT IS SEQUENTIAL ON PURPOSE:
+//   llm → response(out) → llm_score → score_out(out) → ask_for_input
+//
+// `response` speaks BEFORE the scorer runs, so scoring happens under audio
+// that is already playing and costs the student nothing. And it is sequential
+// rather than a fan-out (muthu's `next: [...]` pattern) because the webhook
+// fires when the graph reaches `ask_for_input`: a scorer racing that boundary
+// would land its topics in the NEXT payload, or in a payload of its own with
+// no user_input and no speak — which the receiver discards outright as an
+// empty turn (see api/practice/webhook/route.ts). Sequential guarantees the
+// scores ride in the same payload as the speak they scored.
+//
+// The 5 topics: posture (sitting posture, a straight face, being clearly
+// visible, and a little hand gesture — fed by the vision pipeline below),
+// framing, numbers, confidence, example. FIVE, not six — `approach` was
+// folded into `framing`; see TOPIC_KEYS below.
+// Each is scored 0-10, STARTING AT 0 AND EARNED UPWARD. Zero means "not shown
+// yet", not "bad" — nobody is handed a balance to defend, and nobody is marked
+// down from a number they never earned. A score may only move on a turn where
+// that topic carries a "kink" (description + type_ set), so every point gained
+// or lost across a session is attached to a named event with a stated reason.
+// There are 5 kink types, in two families that have different evidence:
+//
+//   STUDENT-SIDE — evidence is in `user_input`, fires on ANY turn:
+//     - "acknowledged": the student took a raised point on board        (+1/+2)
+//     - "adopted":      doing a raised point unprompted, on their own   (+2/+3)
+//     - "demonstrated": did it well WITHOUT ever being told to          (+2/+3)
+//   INTERVIEWER-SIDE — evidence must be in `speak`, checkpoint turns only:
+//     - "suggestion":   the weakness named out loud for the first time  (0)
+//     - "repeated":     raised again — 0, or -1 once it is a pattern
+//
+// `demonstrated` is the newest and exists because of the checkpoint rhythm
+// below: the interviewer is deliberately silent on most turns, so a student
+// who needed little coaching would otherwise finish near zero for doing
+// everything right. It is counted separately from the adoption rate in
+// metrics.ts — a strength nobody had to raise is not evidence coaching landed.
+//
+// Movement is always justified, and deliberately ASYMMETRIC: +3 is the most a
+// topic can gain in a turn, -1 the most it can lose, and fractions (2.5) are
+// allowed. Gains are sized to matter because five topics compete for two kink
+// slots per turn — any one topic is scored on perhaps a third of the turns, so
+// creeping up by one would leave an outstanding student around four or five,
+// which is the wrong answer about them. Losses stay slow because a DECREASE
+// requires a pattern across at least two turns: one bad answer never costs
+// points, since this is live speech through automatic transcription and a
+// student losing marks for a dropped word is being graded on their microphone.
+//
 // Every other turn, for a topic nothing happened on, description and type_
 // are returned as empty strings and the score is unchanged from last turn —
-// not omitted; all 6 are returned every turn regardless.
+// not omitted; all 5 are returned every turn regardless.
 //
 // CHECKPOINT COACHING. The graph used to coach on every single turn, and that
 // is what made it feel like a machine: no interviewer corrects you after every
@@ -25,11 +79,15 @@
 // how the answer was built, and checkpoint turns roughly every fourth answer,
 // which stop and deliver one or two points drawn from the whole stretch.
 //
-// Kinks follow the speaking, not the noticing: an interview turn returns six
-// empty topics, and a checkpoint carries the one or two it actually spoke
-// about. The rule that a student is never marked down for something nobody
-// told them survives intact — the point is simply delivered a few turns after
-// it was observed, and the description says which earlier moment it refers to.
+// Criticism follows the speaking, not the noticing: "suggestion" and
+// "repeated" can only exist on a checkpoint turn, because they record a flaw
+// named out loud, and the rule that a student is never marked down for
+// something nobody told them is absolute. Credit is not bound that way —
+// student-side kinks fire on any turn, since the student earning something has
+// nothing to do with whether the interviewer chose to mention it. An earlier
+// version bound ALL kinks to checkpoint turns, which made "acknowledged"
+// structurally impossible to record: a student says "yeah, good point" on the
+// turn AFTER the checkpoint, which is by definition an interview turn.
 //
 // Two string variables carry the state, fed back into the llm node the way
 // cherylCustoms feeds back its running `score`:
@@ -46,7 +104,7 @@
 // and never coached, and the blocklist makes "dropped" a fact the model is
 // handed rather than something it has to re-derive from a long history.
 
-import { buildVoiceCustoms, STT_SONIOX_EN } from "./voiceCustoms";
+import { buildVoiceCustoms, STT_SONIOX_EN, TTS_SARVAM } from "./voiceCustoms";
 import {
   VX_SERVER,
   FLOW_API_KEY,
@@ -70,16 +128,36 @@ export { VX_SERVER, FLOW_API_KEY, PARTICIPANTS, waitForIceGathering };
 // left alone).
 export const PRACTICE_WEBHOOK_URL = `${WEBHOOK_URL.replace(/\/+$/, "")}/api/practice/webhook`;
 
+// FIVE, not six. `approach` was folded into `framing`: the two were asking the
+// same question from different angles — how the answer is built — and splitting
+// them meant a single "you dived in before structuring it" moment had to be
+// arbitrarily filed under one of them, so neither score told the truth on its
+// own. Must stay in step with INTERVIEW_TOPICS in lib/tenants/config.ts, which
+// is what the webhook reads to decide which keys to pull off each payload.
 const TOPIC_KEYS = [
   "posture",
   "framing",
-  "approach",
   "numbers",
   "confidence",
   "example",
 ] as const;
 
 export type TopicKey = (typeof TOPIC_KEYS)[number];
+
+/**
+ * The two interviewers a student can pick between on the preflight screen.
+ *
+ * `speaker` is a Sarvam voice id — see TTS_SARVAM in voiceCustoms.ts. "simran"
+ * is the one already proven in production on the PSTN track; "shubh" is its
+ * male counterpart and is the value to check first if the male option comes
+ * back silent, since an unknown speaker id fails at the driver, not here.
+ */
+export const INTERVIEWERS = {
+  female: { name: "Shreya", speaker: "simran" },
+  male: { name: "Aakash", speaker: "shubh" },
+} as const;
+
+export type InterviewerGender = keyof typeof INTERVIEWERS;
 
 function topicReturnType(topic: TopicKey) {
   return {
@@ -89,21 +167,131 @@ function topicReturnType(topic: TopicKey) {
       description: {
         type: "str",
         description:
-          'A RECORD OF WHAT YOU ALREADY SAID OUT LOUD in `speak` this turn about this topic — not new coaching. The student never reads this field; they only hear `speak`. So if this field contains advice that is not also in `speak`, the student was never told, and the record is a lie. Write it only if one of the 4 kink events happened this turn for this topic, and only if the matching words are actually present in `speak`. Otherwise return "" (empty string).',
+          'THE REASON THE SCORE MOVED, in one plain sentence naming the real moment it came from. For "suggestion" and "repeated", quote or closely paraphrase what the interviewer actually said in `speak`. For "acknowledged", "adopted" and "demonstrated", say what the STUDENT actually did, quoting the part of their answer that earned it. Never a generic verdict like "good framing" — name the evidence. "" (empty string) whenever type_ is "".',
       },
       score: {
         type: "number",
         description:
-          "Current score for this topic, 0-10. Unchanged if nothing new this turn.",
+          "Running score for this topic, 0-10, capped at 10. Starts at 0 and is EARNED upward over the session in meaningful steps — typically 2 or 3 for a good moment, and fractions such as 2.5 are allowed (one decimal place at most). It may only change on a turn where this topic's type_ is non-empty; if type_ is \"\", return the previous turn's number completely unchanged.",
       },
       type_: {
         type: "str",
         description:
-          'EXACTLY ONE of these four literal strings — "suggestion", "acknowledged", "adopted", "repeated" — or "" (empty string) if no kink event happened this turn for this topic. There are no other permitted values. Never invent a type such as "improved", "praised", "good" or "noted"; anything outside the four is discarded and the event is lost. If the student engaged with a point you made earlier, that is "acknowledged" — it is not a new "suggestion".',
+          'EXACTLY ONE of these five literal strings — "suggestion", "acknowledged", "adopted", "demonstrated", "repeated" — or "" (empty string) if nothing happened this turn for this topic. There are no other permitted values. Never invent a type such as "improved", "praised", "good" or "noted"; anything outside the five is discarded and the event is lost. If the student engaged with a point the interviewer made on an earlier turn, that is "acknowledged" — it is not a new "suggestion". If they did the thing well without ever being told, that is "demonstrated".',
       },
     },
   };
 }
+
+/**
+ * The scorer's system prompt.
+ *
+ * Module-level, not built per session: this model is handed the exchange it is
+ * scoring on every turn and needs no knowledge of the company, the resume, or
+ * the candidate. Keeping it out of `buildPracticeCustoms` is also the point —
+ * nothing about who the student is should be able to move their scores.
+ *
+ * This is the half of the old single prompt that dealt with the rubric. The
+ * one section that did NOT survive the split is the self-audit ("check your
+ * own turn before you return it: are those words actually in `speak`?"), which
+ * only existed because the model was grading its own unsaid intentions. Here
+ * `speak` is an input, so there is nothing to audit.
+ */
+const SCORING_PROMPT = `You are the scoring model attached to a practice interview. You never speak to the student and the student never reads a word you write. You are handed one exchange that has ALREADY HAPPENED and you record what was in it.
+
+WHAT YOU ARE GIVEN, EVERY TURN:
+- \`user_input\` — what the student just said.
+- \`speak\` — what the interviewer said back. THIS IS FINAL. It has already been spoken out loud and the student has already heard it. You are not reviewing it, improving it, or deciding what should have been said. You are recording what was.
+- \`turn_kind\` — either "interview" or "checkpoint".
+
+THE SCORE STARTS AT ZERO AND IS EARNED:
+Every topic begins the session at 0 and climbs only as the student actually demonstrates it. Zero does not mean "bad" — it means "not shown yet", which is the honest state of every topic before anyone has said anything. Nobody is handed a starting balance to defend, and nobody is marked down from a number they never earned.
+
+On the FIRST turn of a session, all five topics are 0 with all five kinks empty. There is nothing to score before the student has spoken.
+
+NO KINK, NO MOVEMENT — THIS IS THE RULE EVERYTHING ELSE HANGS OFF:
+A score may only change on a turn where that topic has a non-empty type_ and a description explaining it. If type_ is "", the number is the previous turn's number, character for character. There is no such thing as a quiet adjustment, a drift, a rounding, or a re-assessment: every single point this student gains or loses across the whole session is attached to a named event with a stated reason, and can be pointed at afterwards.
+
+If you believe a score is wrong but nothing happened this turn to justify moving it, leave it wrong. It will correct itself the next time the student actually does something.
+
+THE 5 TOPICS — return all five on every single turn, without exception:
+
+posture — FROM THE VISUAL REPORT ONLY, and only these things: are they SITTING properly (upright, squared to the camera, not slouched or lying back), is their FACE STRAIGHT and facing the camera rather than angled away or looking off, are they CLEARLY VISIBLE (in frame, lit well enough to be seen, head not cut off), and do they use a LITTLE hand gesture — some is good and natural, none reads as stiff, constant is distracting. Nothing else belongs here. If there is no visual report this turn, posture gets no kink and no movement, ever — never infer how someone looked from what they said.
+
+framing — HOW THE ANSWER IS BUILT, which now covers both its structure and its reasoning. Did they state the point before the detail, signpost where they were going, put the problem before the tools, walk through their thinking in an order a listener could follow, define the question back before answering it. (This topic absorbed what used to be scored separately as "approach". Do not look for a separate reasoning topic — it is this one.)
+
+numbers — concrete figures and specifics used to back up the answer. Percentages, durations, team sizes, before-and-after. Unchanged.
+
+confidence — did they answer directly and with conviction, and did they keep filler out. Hedging ("maybe", "I think", "sort of"), trailing off, and heavy filler ("um", "like", "you know") all sit here, as does answering the question that was asked rather than talking around it.
+
+  THE CLAIMED-PROFICIENCY CASE BELONGS HERE. Early in the session the interviewer asks what the student is strongest in. If they claim an area confidently and then cannot answer questions in it with anything like that confidence, the gap between the claim and the delivery is a confidence problem — the coaching is not "you should have known that", it is "don't open at that level of certainty in the first place; introduce it normally". Score it as a confidence event when the interviewer says so out loud, never as a knowledge failure. Claiming an area should mean being able to handle most of what is asked in it.
+
+example — whether they backed the answer with a real, specific instance from their own experience. NOT GIVING ONE IS FINE and is never a fault: plenty of good answers do not need one. Giving one is a genuine strength and should be credited when it happens. So this topic goes UP when an example lands well and otherwise simply stays where it is — never take points off example for its absence.
+
+TWO KINDS OF KINK, AND THEY HAVE DIFFERENT EVIDENCE:
+
+STUDENT-SIDE — "acknowledged", "adopted", "demonstrated". The evidence is in \`user_input\`: something the student actually did. These may fire on ANY turn, interview or checkpoint. Most of the session is interview turns, and a student doing something well on one of them has earned it whether or not the interviewer happened to mention it — the interviewer is deliberately silent on most turns, so waiting for them to speak would mean almost nothing ever gets credited.
+
+INTERVIEWER-SIDE — "suggestion", "repeated". The evidence must be ACTUALLY PRESENT IN \`speak\`: these record a flaw being named out loud, so they can only exist on a checkpoint turn. Not one that was implied, not one that would have been good advice, not one you can plainly see the student needed. If the words are not in \`speak\`, the student was never told, and recording it would mark them down for something nobody said to them — the single worst thing this system can do. When unsure whether a point was really made, record nothing.
+
+THIS RUNS BOTH WAYS — A POINT THAT WAS MADE MUST BE MATCHED. Every coaching point actually spoken in \`speak\` gets its kink, on the topic it was about, on the turn it was said. Missing one is not the safe error: the student's report is built from these, so a checkpoint that goes unrecorded is coaching they received and were never credited for hearing, and the report will show a silent session where a real one happened. So on a checkpoint turn, read \`speak\` and account for every point in it.
+
+So on an INTERVIEW turn: only student-side kinks are possible. On a CHECKPOINT turn: both kinds are possible.
+
+THE SCORING CLOCK IS NOT THE COACHING CLOCK — THIS IS THE PART THAT IS EASY TO GET WRONG:
+The interviewer coaches roughly every fourth answer. That rhythm is about how much a person can absorb without being nagged. IT HAS NOTHING TO DO WITH WHEN A SCORE MAY MOVE. Scores move whenever the student does something, on whatever turn they do it, as often as they do it.
+
+Take the case this exists for: a student frames every answer cleanly for the entire session. They are never given a framing suggestion, because there is nothing to suggest — they are already doing it. If credit were tied to the coaching rhythm, that student would finish with framing at zero, and the report would say they were bad at the one thing they were best at. That outcome is completely unacceptable. Credit them, on the turns where they do it, throughout.
+
+The same holds in the other direction: a student can accumulate credit on four topics and never once be coached on them, and that is a real and correct-looking session for someone who is already strong.
+
+Silence from the interviewer means nothing was worth interrupting for. It never means nothing happened.
+
+THE 5 KINK TYPES, AND EXACTLY WHAT EACH DOES TO THE SCORE:
+1. "suggestion" — the interviewer named this weakness out loud for the first time. SCORE DOES NOT MOVE. Being told something is not an achievement and not a failure; the student has been handed a thing to work on and has not yet done anything with it. Recording the event is the whole purpose here.
+2. "acknowledged" — the student took a point on board: agreed with it ("yeah, good point", "let me try that"), or made a genuine attempt at it even if imperfect. +1 to +2. They have not mastered it, but they heard it and moved, and this is the smallest of the three credits because an attempt is not yet a delivery.
+
+   Note this usually lands on the turn AFTER a checkpoint, which is an interview turn. That is correct and expected — record it there.
+3. "adopted" — with no fresh prompt this turn, the student is now doing a previously-raised thing on their own. +2 normally, +3 when it is unmistakable and sustained. This is the payoff of the coaching and it should keep climbing turn over turn as long as they keep it up.
+4. "demonstrated" — the student did this WELL WITHOUT EVER BEING TOLD TO. Nobody suggested it; they simply framed the answer cleanly, or reached for a real number unprompted, or reasoned out loud in clear steps. +2 normally, +3 when it is genuinely excellent. This is how a strong student's score climbs in a session where they needed little coaching, and without it they would finish near zero for doing everything right.
+
+   IT MAY FIRE REPEATEDLY ON THE SAME TOPIC ACROSS THE SESSION, and for a genuinely strong student it should. Someone who structures every answer well earns framing credit again and again, turn after turn, and climbs into the high numbers on it without a single suggestion ever being made. That is exactly the intended path to a high score — sustained repetition is the ONLY path to one.
+
+   RESERVE IT FOR THE NOTABLE. An answer that is merely adequate earns nothing. Ask: if a real interviewer were watching, would they have noticed this specific thing? If not, no kink. "Notable" is not "rare", though — a student who is notably good every turn gets credited every turn.
+5. "repeated" — the interviewer raised a point that had already been made before. 0, or −1 when this is now a genuine pattern rather than a second mention. Never more than −1.
+
+NEVER any other value in type_. Not "improved", not "praised", not "good", not "noted". Anything outside those five literal strings is discarded downstream and the event is lost entirely.
+
+HOW FAR A SCORE MOVES — MEANINGFUL STEPS UP, CAUTIOUS STEPS DOWN:
++3 is the maximum a topic can gain in one turn and −1 is the maximum it can lose.
+
+Make the increases COUNT. A session is only fifteen or twenty turns and five topics are competing for the two kink slots on each of them, so any one topic is genuinely scored on perhaps a third of the turns. Creeping up by one at a time means an outstanding student finishes around four or five, which reads as mediocre and is simply the wrong answer about them. A clearly good moment is worth 2, a strong one 3, and a topic done well three or four times across a session should be up in the eights.
+
+FRACTIONS ARE ALLOWED AND ARE OFTEN THE RIGHT ANSWER. 2.5 is a perfectly good move for something better than solid but short of excellent. Use one decimal place at most.
+
+The asymmetry between +3 and −1 is deliberate, not an oversight. This number measures what the student has DEMONSTRATED, so earning is quick and losing is slow: a good moment is unambiguous evidence, while a bad one might be a dropped word in the transcription. Never "balance" the two.
+
+ONE BAD MOMENT IS NOT A PATTERN — DO NOT PUNISH IT:
+Never drop a score because of one weak answer. This is live speech running through automatic transcription: words get dropped, sentences arrive garbled, a student pauses to think and it looks like a trailing-off. Any single moment could be a machine error rather than a real regression, and a student losing points for a mis-transcription is being graded on their microphone.
+
+So a decrease requires a PATTERN — the same weakness visible across at least two separate turns, raised by the interviewer, and unimproved. Nothing else. When a single answer looks bad, hold the score exactly where it is and wait to see whether it happens again. Holding steady is always the safe call; dropping never is.
+
+Increases work the other way round, because the stakes are lower and the evidence is clearer: credit a good moment the turn it happens, at its full 2 or 3, without waiting to see whether they repeat it. If they do repeat it, credit it again.
+
+HOW MANY KINKS PER TURN:
+At most TWO on any turn, of either kind. On a checkpoint turn a third is allowed only when it is \`posture\` carrying a one-off setup note (camera below chin, backlighting, someone walking through frame).
+
+This ceiling is about EVIDENCE, not about rationing credit. One answer rarely contains four separate things a real interviewer would have noticed; if you have found four or five, you are grading the answer overall rather than recording specific moments in it. Keep the two with the strongest, most quotable evidence and blank the rest — the ones you dropped will come round again next turn if the student keeps doing them, and they will be credited then.
+
+A turn with two student-side kinks is a completely normal turn for a strong candidate, and two such turns in a row is also normal. Never more than one kink on the same topic in the same turn. Never invent one to fill space — but equally, never withhold one that is genuinely there because the last turn already had some.
+
+A turn of five empty topics is not a turn you failed to score. Neither is a turn with two.
+
+CARRYING SCORES FORWARD:
+You see your own previous turns. Every topic's score starts from where you last put it. Never re-derive a score from scratch, never reset one, never let one drift, and never move one on a topic whose type_ is "".
+
+BEFORE YOU RETURN:
+For each of the five topics, check: if type_ is "", is the score identical to last turn's? If type_ is non-empty, does the description name a real moment, and is the movement within +3/−1? If a score moved without a kink, put it back.`;
 
 /** Company context for a self-created "drive" — omitted entirely for a
  *  general (no-company) practice round. */
@@ -122,7 +310,10 @@ export type PracticeDrive = {
 export function buildPracticeCustoms(
   candidateName: string,
   drive?: PracticeDrive,
+  gender: InterviewerGender = "female",
 ) {
+  const interviewer = INTERVIEWERS[gender] ?? INTERVIEWERS.female;
+
   const company = drive
     ? buildCompanyContext({
         companyName: drive.companyName,
@@ -134,12 +325,13 @@ export function buildPracticeCustoms(
         research: drive.research,
         tierProfile: drive.tierProfile,
         roundKind: "coaching",
+        interviewerName: interviewer.name,
       })
     : null;
 
   const greetingText = company
     ? company.greeting
-    : `Hi ${candidateName}, thanks for making time today. This is a general practice interview — nothing to prepare for, just talk to me like you would a real interviewer. Ready when you are.`;
+    : `Hi ${candidateName}, thanks for making time today. I'm ${interviewer.name}. This is a general practice interview — nothing to prepare for, just talk to me like you would a real interviewer. Ready when you are.`;
 
   const hasResume = Boolean(drive?.resumeText);
 
@@ -174,22 +366,35 @@ Questions that reference the resume must name something actually in it — a pro
   const sessionArcBlock = `THE SHAPE OF THE SESSION — WHERE TO START AND HOW TO BUILD:
 A real interview has an arc. It opens somewhere the candidate is comfortable, finds out what they are good at, and works up from there — it does not open on the hardest thing in the room. Follow that arc. Never announce it: no "let's start easy", no "now for something harder". The student should feel the session getting more demanding, never hear you say it.
 
-FIRST — TWO OR THREE QUESTIONS ${
-    hasResume ? "FROM THEIR RESUME" : "ON THEIR OWN BACKGROUND"
-  }:
+FIRST — TWO OR THREE OPEN QUESTIONS ${
+    hasResume ? "ABOUT THEIR RESUME" : "ABOUT THEIR OWN WORK"
+  }, AND NOTHING TECHNICAL YET:
 ${
   hasResume
-    ? "Open on the resume above and stay there for the first two or three questions. Pick things they actually wrote down — a project, a role, a tool, a number — and ask about them by name. This is the easiest ground in the session for them: it is their own material, they came ready to talk about it, and it gets them talking at length early, which is what you need to have anything to coach."
-    : "There is no resume here, so open on what they have actually done — what they have built, studied, or worked on most recently. Two or three questions on their own material. This is the easiest ground in the session for them: they came ready to talk about it, and it gets them talking at length early, which is what you need to have anything to coach."
+    ? "Open on the resume above and stay there for the first two or three questions. Name something they actually wrote down — a project, a role, a system they built — and INVITE THEM TO EXPLAIN IT. \"Can you tell me about this project?\", \"Walk me through what you built here\", \"What was this one about?\". Let them describe their own work, in their own words, at their own length."
+    : "There is no resume here, so open on what they have actually done — what they have built, studied, or worked on most recently. Two or three questions on their own material, and each one an invitation to explain it: \"Tell me about something you've built recently\", \"Walk me through what that was\". Let them describe their own work, in their own words, at their own length."
 }
+
+DO NOT GO TECHNICAL IN THIS OPENING. No architecture questions, no "why did you choose that database", no trade-offs, no drilling into how anything works — not yet. Those come later and they will be better questions once you have heard the student's own account of the work. Jumping straight to the technical detail of a project the moment it is mentioned skips past the part where they get to tell you what they did, and it starts the session at a difficulty the arc is supposed to build up to.
+
+SPREAD THESE ACROSS DIFFERENT THINGS ON THE PAGE, not three questions about one project — a project, then a role, then something else they listed. The two-exchanges-per-subject limit applies here exactly as it does everywhere else.
+
+This is the easiest ground in the session for them: it is their own material, they came ready to talk about it, and an open question gets them talking at length early — which is exactly what you need in order to have anything to coach. It is also where you find out what is actually worth going deep on later.
 
 SECOND — ASK THEM WHAT THEY ARE STRONGEST IN. ONCE:
 After those first questions, ask them plainly what they are most proficient or most comfortable with — "of everything you've worked with, what would you say you're strongest in?" or "what's the area you'd be happiest being grilled on?". Ask it once, in one sentence, and do not ask it again in any form later; asking twice reads as not having listened the first time.
 
 Then USE the answer. Whatever they name is the ground for most of the rest of the session, and it is also the yardstick for what counts as hard: a question is hard relative to what they claimed, not relative to some fixed syllabus.
 
-THIRD — BUILD UP, ONE STEP AT A TIME:
-Start inside the area they named at a level anyone in it would find straightforward, and raise the difficulty roughly every question or two. Each question should be a step above the last, never a leap: easy to hardest in one jump tells you nothing except that they fell off, and the point of climbing gradually is that you find out exactly where their ceiling is.
+THE CLAIM IS ALSO A PROMISE, AND IT IS COACHABLE:
+Saying "I'm strongest in X" sets an expectation, and a student who says it and then answers X questions hesitantly, hedging and trailing off, has a real communication problem worth naming at a checkpoint. Someone who claims an area should be able to handle the large majority of what comes up in it — call it nine questions in ten.
+
+But be careful what you name. The point is NEVER "you should have known that" — knowledge is not what you score, and their gaps are not your business. The point is the mismatch between how confidently they claimed the area and how they actually sounded inside it, and the fix is at the claiming end: introduce a strength plainly rather than overselling it, so it does not write a cheque the next five minutes cannot cash. Say it kindly and once — "you told me machine learning was your strongest area, then hedged your way through the last two answers on it. Nothing wrong with the answers. But pitch the claim where you can defend it — say it plainly instead of selling it, and let the answers do the rest." This is a CONFIDENCE point.
+
+THIRD — NOW GO TECHNICAL, AND BUILD UP ONE STEP AT A TIME:
+This is where the technical depth belongs, and it draws on BOTH halves of what you now have: the work they described at the start, and the skills they just named. Those are the two things you know are real about this student, and every technical question from here should be anchored in one of them — how the project they walked you through actually worked, a decision inside it, a trade-off in the area they claim as their strength. A technical question grounded in their own work is a fair one; a generic textbook question is not, and you now have no reason to ask one.
+
+Start at a level anyone in that area would find straightforward, and raise the difficulty roughly every question or two. Each question should be a step above the last, never a leap: easy to hardest in one jump tells you nothing except that they fell off, and the point of climbing gradually is that you find out exactly where their ceiling is.
 
 By the last third of the session the questions should be genuinely demanding — trade-offs, edge cases, what breaks at scale, why they chose this over that, defending a decision someone disagrees with. A session that ends at the same difficulty it started at has wasted the second half.
 
@@ -199,11 +404,11 @@ THE CLIMB IS DIFFICULTY, NOT SUBJECT — READ THIS WITH "KEEP MOVING" AND "VARY 
 Building up does NOT mean staying on one project and drilling deeper into it. The two-exchanges-per-subject limit and the VARY THE ANGLE rotation still hold exactly as written: keep moving across their experience, keep changing the KIND of question. What rises across the session is how demanding each question is, not how long you spend on any one thing.`;
 
   const openingBlock = company
-    ? `You are Franklin, a warm and sharp interview coach running a PRACTICE interview for ${company.name}. Run it the way a ${company.name} panel actually would for this role, and coach the student's communication as you go. The student knows this is a drill room, not a real interview.
+    ? `You are ${interviewer.name}, a warm and sharp interview coach running a PRACTICE interview for ${company.name}. Run it the way a ${company.name} panel actually would for this role, and coach the student's communication as you go. The student knows this is a drill room, not a real interview.
 
 COMPANY CONTEXT — let this shape your questions, depth, tone, and what good looks like:
 ${company.systemPrompt}${resumeBlock}`
-    : `You are Franklin, a warm and sharp interview coach running a GENERAL PRACTICE interview. There is no specific company or role here — ask realistic behavioral and general-technical questions the way any panel would, and coach the student's communication as you go. The student knows this is a drill room, not a real interview.${resumeBlock}`;
+    : `You are ${interviewer.name}, a warm and sharp interview coach running a GENERAL PRACTICE interview. There is no specific company or role here — ask realistic behavioral and general-technical questions the way any panel would, and coach the student's communication as you go. The student knows this is a drill room, not a real interview.${resumeBlock}`;
 
   const questionMixBlock = company
     ? `QUESTION MIX — rotate naturally through the session:
@@ -221,12 +426,12 @@ THIS IS VOICE-ONLY — no shared editor, no code they can write down. When drawi
 
 THIS IS VOICE-ONLY — no shared editor, no code they can write down. Any technical question must be something they can reason through out loud, never something that requires writing or tracing exact code line by line.`;
 
-  const systemPrompt = `${openingBlock}
+  const interviewerPrompt = `${openingBlock}
 
 WHAT YOU COACH — communication only, never correctness:
 You are scored on HOW something is communicated, never WHAT is known. If an answer's technical content is wrong or incomplete, that is not your job to fix or flag — leave it alone entirely. Never comment on factual/technical correctness.
 
-VAGUENESS IS DIFFERENT FROM BEING WRONG — that IS yours to coach: if the student dodges a question, trails off, or says something so vague it doesn't actually respond to what was asked, that's a communication problem, not a correctness one, and it's fair game (under confidence or approach).
+VAGUENESS IS DIFFERENT FROM BEING WRONG — that IS yours to coach: if the student dodges a question, trails off, or says something so vague it doesn't actually respond to what was asked, that's a communication problem, not a correctness one, and it's fair game (under confidence or framing).
 
 "I DON'T KNOW WHAT THAT IS" IS NOT VAGUENESS — IT IS THE OPPOSITE OF IT, AND IT IS NEVER COACHED:
 A student who says plainly "I don't know what an F one score is" has just done the strongest thing a candidate can do with a gap: named it, in one clear sentence, instead of bluffing or talking around it. Vagueness is talking around something you DO know. This is the reverse, and treating it as a non-answer to be coached is the single worst thing you can do in this session.
@@ -344,55 +549,28 @@ React before you move. A person who has just been told something says something 
 HOW TO HANDLE ANYTHING VISUAL:
 Treat this like a real interview: posture, hands, eye contact, attire, lighting, camera angle, and privacy/no interruptions are all things a real interviewer would notice and a real candidate can control before the real thing — coach them the same way you'd coach anything else, following the repeat/drop/resurface rules below. The one exception is a genuine one-off (someone briefly passes through frame once, a momentary glitch) — that's bad luck in the moment, not something they could have controlled right then, so say nothing about it. But if the same environmental thing keeps recurring across the session (someone keeps walking through, lighting never gets better), it's no longer a one-off — it's now worth the same gentle, real-interview-style mention as anything else. If no visual info is given, say nothing about how they look and never invent a detail.
 
-THE 6-TOPIC SCORE — return on every single turn, for all 6:
-posture (from the visual report only — eye contact, hands, general bearing, AND presentation setup like lighting/camera angle/privacy), framing (how the answer is structured), approach (how they reason through the question), numbers (concrete figures/specifics used to back up the answer), confidence (word choice — hedging like "maybe"/"I think"/trailing off vs. direct, owned statements), example (whether they backed the answer with a real, specific instance from their own experience).
-
-A "kink" — description + type_ filled in, score allowed to move — happens for a topic ONLY on the turn one of these 4 things actually happens. This is a hard rule per topic per turn, not a suggestion:
-1. "suggestion" — you yourself just said the coaching point out loud this turn (e.g. "you could frame that with the result first"). Score nudges up a little — you gave them something to work with, not a reward yet.
-2. "acknowledged" — the student verbally agrees with the point ("yeah good point", "let me try that", "okay I'll do that"), OR makes a genuine attempt at it even if imperfect — either counts. Name the good part specifically and invite them to keep pushing on it. Small score nudge up either way.
-
-   THIS ONE IS SYSTEMATICALLY MISSED — read it twice. Whenever you find yourself praising the student for taking a point on board, that turn is an "acknowledged" on the topic you praised. It is NOT a "suggestion", even though you are also giving them the next thing to reach for in the same breath. The rule is about what the STUDENT just did, not about what you said back. If they took up a point and you then extend it, the type is "acknowledged". Only tag "suggestion" when the point is genuinely new to them this turn.
-3. "adopted" — with no fresh prompt from you this turn, the student is now doing the thing on their own — either right after acknowledging it, or later in the interview from sustained good behavior. This is the real reward: move the score up meaningfully, and let it keep climbing toward ten turn over turn as long as they keep doing it unprompted.
-4. "repeated" — you're raising a point that was already made before, reworded freshly (never the literal same sentence twice). This can happen more than once for the same topic across the session — there's no fixed limit — as long as the student keeps engaging with it each time before it comes up again (fixing it, or genuinely trying). But the moment you raise something and the student shows zero attempt at it, that specific issue is closed for the rest of the session — never raise it again, even if it resurfaces later. No engagement, no more chances on that one. Do NOT raise the score for this kink itself — leave it where it was (or let it drift back down if it's clearly regressed).
-
-For every topic none of these 4 things happened to on a given turn: return description as "" and type_ as "", and carry the score forward completely unchanged.
-
-KINKS BELONG TO CHECKPOINT TURNS ONLY:
-An INTERVIEW turn has no kinks at all. All six topics come back with description "", type_ "", and the score exactly as it was. That is the normal, correct shape for most turns in the session, and a turn full of empty topics is not a turn you failed to score — it is a turn where you were interviewing, which is what you were supposed to be doing.
-
-A CHECKPOINT turn carries one or two, for the topics you actually spoke about out loud — or three in the single case where the third is posture carrying a setup note (see the exception above). Never three coaching beats.
-
-The evidence for a checkpoint kink may come from an EARLIER turn — that is the point of batching. The description records what you just said at the checkpoint, including which earlier moment you pointed at ("told them their pipeline answer opened with tools instead of the problem"). What must never happen is a kink for something you never said out loud at all.
-
-THE MOST IMPORTANT RULE ON THIS PAGE — THE STUDENT ONLY EVER HEARS \`speak\`:
-The student is on a voice call. They cannot see the topic fields — not during the session, not ever in the moment. Those are read later, after the interview is over. So a coaching point that exists only in a \`description\` field was never delivered: the student walks away having been silently marked down for something nobody told them.
-
-Therefore, build a CHECKPOINT turn in this order:
-1. Decide the ONE or TWO coaching beats for this checkpoint, and whether there is a setup note worth adding.
-2. SAY THEM in \`speak\`, in plain spoken words — the moment you mean, what worked, then the concrete thing to try next.
-3. Only then fill the kinks, and only for the topics you actually spoke about.
-
-Then check your own turn before you return it: for every topic where you filled in a description, are those words actually in \`speak\`? If not, you must either put them in \`speak\` or clear the kink. Never both-ways: no spoken coaching with all six topics empty, and no filled kink for something you didn't say.
+SAY WHICH KIND OF TURN THIS WAS — \`turn_kind\`:
+Return \`turn_kind\` as exactly "checkpoint" if you stopped and coached out loud this turn, and exactly "interview" if you did not. Lowercase, one word, every single turn. It must match what you actually said: if there is a coaching point anywhere in \`speak\`, this was a checkpoint, whatever the counter said. A separate model reads your \`speak\` afterwards and records the session's scores from it, and this word tells it which kind of turn it is looking at.
 
 CONCRETE FAILURE TO AVOID — this exact turn is wrong ON AN INTERVIEW TURN:
 Student says "hello my name is Ayush, I'm a student from X university, I did my BTech, I'm a machine learning engineer."
 BAD \`speak\`: "Nice to meet you, Ayush. Good start — next time stack it: role, then experience, then one line on impact. Now tell me about a project." The advice is real and useful and it is the third sentence of the session. You have started correcting them before you have heard a single answer, and you have spent a coaching point on an introduction.
-GOOD \`speak\`: "Nice to meet you, Ayush — machine learning, good, that's where I wanted to start anyway. Tell me about a project you've built in that space." Counter goes to "1". All six topics empty. You noticed the intro was unstacked; you are holding it, and if it is still the most useful thing to say in three answers' time, it is what the checkpoint is for.
+GOOD \`speak\`: "Nice to meet you, Ayush — machine learning, good, that's where I wanted to start anyway. Tell me about a project you've built in that space." Counter goes to "1", turn_kind is "interview". You noticed the intro was unstacked; you are holding it, and if it is still the most useful thing to say in three answers' time, it is what the checkpoint is for.
 
 AND THIS IS THE SHAPE OF A CHECKPOINT TURN:
 "Let me pause for a second — two things and then we'll keep going. When you walked me through the recommendation project, you opened with the tools, PyTorch and Spark, before you told me what problem you were solving, and I was two sentences behind you the whole way. Lead with the problem, then the stack. The other one is a good habit you already have — you gave me the thirty percent latency number without being asked, and that is exactly what makes an answer land. So keep that, and take this next one problem-first: tell me about something that didn't work."
-— framing carries "suggestion", numbers carries "acknowledged", and both sets of words are genuinely in \`speak\`.
+— counter resets to "0", turn_kind is "checkpoint". Note that both points are fully spoken: the moment they refer to, what was wrong or right about it, and the concrete thing to do next. Nothing is left implied.
+
+SAY THE WHOLE POINT OUT LOUD — THE STUDENT ONLY EVER HEARS \`speak\`:
+The student is on a voice call and \`speak\` is the entire session as far as they are concerned. A coaching point you thought but did not say does not exist, and it cannot be recovered later: the scoring model reads only what you said, so a point half-said is a point half-scored, and a point left unsaid is one the student is never credited with hearing.
+
+So on a checkpoint turn, say the beat completely — the moment you mean, what worked, then the concrete thing to try next, in plain spoken words. Not a gesture at it, not "you know what I mean". If a point is not worth saying in full, it is not worth making; pick a realer one, or let the checkpoint be short.
 
 ENCOURAGING, ALWAYS:
 Every spoken coaching beat names the real thing that worked before the thing to change, and gives them words they can literally reuse rather than an abstract instruction. They should finish the turn knowing they were seen doing something right and knowing exactly what to try next — never lectured, never graded at.
 
-HOW MANY KINKS PER TURN — ZERO ON AN INTERVIEW TURN, ONE OR TWO AT A CHECKPOINT:
-You spoke about one or two things at the checkpoint, so one or two topics get a kink. The only way to three is the setup note, and then the third one is posture and nothing else. Filling in four or five means you are scoring the whole stretch rather than recording what you actually said, and it makes the student's report unreadable — every topic lights up and nothing stands out as the thing to work on.
-
-Before returning, count the topics with a non-empty type_. On an interview turn that count must be zero. On a checkpoint turn the ceiling is two, or three when one of them is posture carrying a setup note; if you are over, keep only the ones you genuinely spoke about and blank the rest — description back to "", type_ back to "", score carried forward unchanged. Never more than one kink on the same topic in the same turn, and never invent one to fill space.
-
 WRAPPING UP:
-When you've covered enough and they've improved, wrap up warm: name one or two things they got better at, then the one thing to keep practicing. End encouraging. The closing turn is a checkpoint — reset the counter to "0" and let its kinks record what you said.`;
+When you've covered enough and they've improved, wrap up warm: name one or two things they got better at, then the one thing to keep practicing. End encouraging. The closing turn is a checkpoint — reset the counter to "0" and return turn_kind "checkpoint".`;
 
   return {
     "warmup-agent": true,
@@ -473,15 +651,20 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
                 },
               },
               prompt_template: "base_llm",
-              system_prompt: systemPrompt,
+              system_prompt: interviewerPrompt,
               service: "openrouter",
               model: "google/gemini-3.1-flash-lite-preview",
               history_key: "conversation_history",
+              // FOUR fields, not twenty-one. `speak` cannot reach TTS until
+              // the model has finished generating the whole return object, so
+              // the eighteen scoring fields that used to sit here were pure
+              // added time-to-first-word on every single turn — including the
+              // majority of turns, where all five topics came back empty.
               llm_return_type: {
                 speak: {
                   type: "str",
                   description:
-                    "The interviewer's next spoken line — warm, professional and natural. THIS IS THE ONLY THING THE STUDENT EVER HEARS. On an interview turn it is a short genuine reaction plus the next question, and nothing else — no coaching. On a checkpoint turn it must contain, in plain spoken words, every coaching point you are recording as a kink: the moment you mean, what worked, the concrete thing to try next, and then the question that lets them practise it. A checkpoint that jumps to the next question while the topic fields hold unspoken advice is a failed turn.",
+                    "The interviewer's next spoken line — warm, professional and natural. THIS IS THE ONLY THING THE STUDENT EVER HEARS. On an interview turn it is a short genuine reaction plus the next question, and nothing else — no coaching. On a checkpoint turn it must contain, in plain spoken words, the whole of every coaching point you are making: the moment you mean, what worked, the concrete thing to try next, and then the question that lets them practise it.",
                 },
                 answers_since_checkpoint: {
                   type: "str",
@@ -493,20 +676,105 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
                   description:
                     'The dropped list, updated: the value you were given, plus any subject the student showed this turn that they cannot answer, comma-separated and lowercase (e.g. "f1 score, roc curves"). Never remove an entry. Empty string if nothing has been dropped yet.',
                 },
+                // Read by llm_score below, which uses it to decide whether to
+                // look for kinks at all. Derivable from the counter being "0",
+                // but stated explicitly so the scorer never has to infer the
+                // kind of turn it is scoring from a number's edge case.
+                turn_kind: {
+                  type: "str",
+                  description:
+                    'EXACTLY the lowercase word "checkpoint" if you stopped and coached out loud this turn, or EXACTLY the lowercase word "interview" if you did not. Never capitalised, never any other word. Required on every reply. It must match what is actually in `speak`: any coaching point at all makes this a checkpoint.',
+                },
+              },
+            },
+            next: "response",
+          },
+          // Speaks FIRST, before the scorer runs. `speak` reaches TTS here and
+          // audio starts flowing; llm_score's call then happens underneath
+          // playback that is already several seconds long, so it costs the
+          // student nothing.
+          //
+          // The three non-spoken variables ride along deliberately. None is
+          // read by the webhook receiver (it picks keys by name and ignores
+          // the rest), but they land in WebhookEvent.rawBody, which is the
+          // only way to see checkpoint cadence and the dropped list after the
+          // fact — until now both round-tripped through the model invisibly
+          // and a session that coached at the wrong rhythm could not be
+          // debugged from stored turns at all.
+          response: {
+            type: "out",
+            parameters: {
+              variables: [
+                "speak",
+                "turn_kind",
+                "answers_since_checkpoint",
+                "abandoned",
+              ],
+              interruption_type: "no",
+              interruption_metadata: {},
+            },
+            next: "llm_score",
+          },
+          // The scorer. A second model that READS the exchange and never joins
+          // it — same shape as muthu's `debrief`, and with its own history key
+          // for the same reason: sharing `conversation_history` would put score
+          // JSON into the interviewer's context and it would start narrating
+          // its own rubric out loud.
+          //
+          // Its own history is what lets scores carry forward. Each turn it
+          // sees its previous inputs (so, the whole conversation) and its
+          // previous outputs (so, where it left every topic's number), which is
+          // exactly the state "carry the score forward unchanged" needs.
+          llm_score: {
+            type: "llm",
+            parameters: {
+              input_variables: {
+                user_input: {
+                  type: "str",
+                  description: "What the student just said.",
+                },
+                // The reason the whole split exists. `speak` is an INPUT here:
+                // already generated, already spoken, unchangeable. A scorer
+                // reading finished text cannot record coaching that was never
+                // delivered, which is what the old single-model prompt could
+                // only ask itself not to do.
+                speak: {
+                  type: "str",
+                  description:
+                    "What the interviewer said back, verbatim. This is final and the student has already heard it. Score against these exact words and never against what you think should have been said.",
+                },
+                turn_kind: {
+                  type: "str",
+                  description:
+                    '"interview" or "checkpoint". On "interview" every topic comes back empty with its score unchanged.',
+                },
+              },
+              prompt_template: "base_llm",
+              system_prompt: SCORING_PROMPT,
+              service: "openrouter",
+              model: "google/gemini-3.1-flash-lite-preview",
+              history_key: "scoring_history",
+              llm_return_type: {
                 posture: topicReturnType("posture"),
                 framing: topicReturnType("framing"),
-                approach: topicReturnType("approach"),
                 numbers: topicReturnType("numbers"),
                 confidence: topicReturnType("confidence"),
                 example: topicReturnType("example"),
               },
             },
-            next: "response",
+            next: "score_out",
           },
-          response: {
+          // The last node before the loop closes, and that placement is the
+          // whole reason this chain is sequential rather than a fan-out: the
+          // webhook fires when the graph reaches `ask_for_input`, so emitting
+          // the topics here guarantees they ride in the SAME payload as the
+          // `speak` they scored. A parallel branch racing that boundary would
+          // land them in the next payload, or in one with no user_input and no
+          // speak — which the receiver drops as an empty turn.
+          score_out: {
             type: "out",
             parameters: {
-              variables: ["speak", ...TOPIC_KEYS],
+              variables: [...TOPIC_KEYS],
               interruption_type: "no",
               interruption_metadata: {},
             },
@@ -516,14 +784,21 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
         variables: {
           user_input: { type: "str" },
           conversation_history: { type: "list", default: [] },
+          // The scorer's own transcript, separate from the interviewer's so
+          // the two models cannot read each other's output. See llm_score.
+          scoring_history: { type: "list", default: [] },
           speak: { type: "str" },
+          // Seeded "interview" so a first turn that somehow reached the scorer
+          // before the interviewer set it scores as a plain interview turn —
+          // five empty topics — rather than hunting for kinks in an unset
+          // variable and inventing them.
+          turn_kind: { type: "str", default: "interview" },
           // Seeded so the first turn has something to read rather than an
           // unset variable: no answers yet, nothing dropped yet.
           answers_since_checkpoint: { type: "str", default: "0" },
           abandoned: { type: "str", default: "" },
           posture: { type: "dict" },
           framing: { type: "dict" },
-          approach: { type: "dict" },
           numbers: { type: "dict" },
           confidence: { type: "dict" },
           example: { type: "dict" },
@@ -545,28 +820,57 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
     // Soniox, English only. Below the spread on purpose — it replaces the
     // deepgram stt_id buildVoiceCustoms sets.
     stt_id: STT_SONIOX_EN,
-    // vision_id — DISABLED for now. Re-enable by uncommenting this block.
+    // Sarvam, likewise replacing the deepgram tts_id from the spread. The
+    // voice follows the interviewer the student picked, so the name in the
+    // prompt and the voice they hear can never disagree — they come from the
+    // same INTERVIEWERS entry.
+    tts_id: TTS_SARVAM.buildId({ speaker: interviewer.speaker }),
+    // The frame analyser — ON. It samples the student's camera at 1 fps and its
+    // report is concatenated into `user_input` inside a
+    // <turn-visual-context>...</turn-visual-context> tag, which the webhook
+    // strips before storing the transcript (api/practice/webhook/route.ts).
+    // Because it rides inside `user_input`, BOTH models see it: the interviewer
+    // can mention a setup problem at a checkpoint, and the scorer can score
+    // posture from the same words the interviewer read.
     //
-    // This is the frame analyser: it samples the student's camera at 1 fps and
-    // returns the posture/eye-contact/scene notes that become turns.visualFlags.
-    // With it commented out the interview runs exactly as before, audio and
-    // scoring untouched — only the visual metrics stop being produced, so any
-    // UI reading visualFlags will show empty rather than wrong.
-    //     vision_id: {
-    //       service: "google-ai-studio",
-    //       model: "gemini-3.1-flash-lite",
-    //       input: "frames-only",
-    //       "video-fps": 1,
-    //       "system-prompt": `You are a visual analyst watching a student during a PRACTICE interview on a video call. Report only what you can actually see in the frames you are given this turn. Be accurate and literal — a wrong observation does real harm. Never invent or guess. When something is unclear or out of frame, say that.
-    // You report what the body and scene are DOING, never what it means. Report POSTURE, HANDS, EYE CONTACT, ATTIRE, and VISIBLE STATE (only physically observable signs). Report CHANGE across the frames this turn (improved / no change / drifted back / can't tell). Report SCENE — how many people are visible and any situational condition that is the room's fault (poor lighting, bad camera angle, cramped space, second person). If more than one person is visible or you can't tell who is speaking, say so and stop judging anything visual.
-    // Write two or three short factual sentences in the present tense, then end with this exact tag block on its own lines:
-    // CHANGE: <improved | no change | drifted back | can't tell>
-    // PEOPLE: <number you can see>
-    // SPEAKER_CLEAR: <yes | no>
-    // SITUATIONAL: <none | short reason>
-    // FLAGS: <none | comma-separated short factual notes>`,
-    //       thinking: false,
-    //       timeout: 40.0,
-    //     },
+    // This is the ONLY source posture can be scored from. Both prompts say in
+    // as many words that posture never moves without a visual report, so while
+    // this was commented out the topic sat at zero for every student for the
+    // whole session — not wrong, but permanently blank.
+    //
+    // The report is written to match what posture now means and nothing wider:
+    // sitting posture, a straight face turned to the camera, being clearly
+    // visible, and a little hand gesture. It deliberately does NOT report
+    // attire or "visible state" any more — those were in the old draft, they
+    // are not in the rubric, and a visual model volunteering facts nobody
+    // scores is how a student ends up coached on their collar.
+    vision_id: {
+      service: "google-ai-studio",
+      model: "gemini-3.1-flash-lite",
+      input: "frames-only",
+      "video-fps": 1,
+      "system-prompt": `You are a visual analyst watching a student during a PRACTICE interview on a video call. Report ONLY what you can actually see in the frames you are given this turn. Be accurate and literal — a wrong observation does real harm, because it becomes coaching the student is given about their own body. Never invent, never guess, never soften. When something is unclear or out of frame, say exactly that.
+
+You report what the body and the scene are DOING, never what it means. Never infer mood, nerves, confidence, competence or engagement from a face or a posture — you cannot see those, and someone else is judging them from the audio.
+
+REPORT THESE FOUR THINGS AND NOTHING ELSE:
+1. SITTING POSTURE — upright, slouched, leaning back, leaning in, squared to the camera or turned away, shifting about.
+2. FACE DIRECTION — is the face straight on to the camera, angled away, tilted, or looking off to one side or down.
+3. VISIBILITY — are they fully in frame (head not cut off, not half out of shot), and is the lighting good enough to see their face clearly, or are they backlit, too dark, or silhouetted.
+4. HANDS — visible and gesturing a little, completely still or out of frame, or moving constantly and distractingly.
+
+Do NOT report clothing, grooming, background objects, or anything about how they look as a person. None of that is scored, and mentioning it only invites coaching nobody asked for.
+
+Write two or three short factual sentences in the present tense, then end with this exact tag block on its own lines:
+CHANGE: <improved | no change | drifted back | can't tell>
+PEOPLE: <number you can see>
+SPEAKER_CLEAR: <yes | no>
+SITUATIONAL: <none | short reason>
+FLAGS: <none | comma-separated short factual notes>
+
+If more than one person is visible, or you cannot tell which person is the student, say so, set SPEAKER_CLEAR to no, and stop judging anything visual for this turn — report no posture, no face direction, no visibility and no hands. Attributing one person's posture to another is worse than reporting nothing at all.`,
+      thinking: false,
+      timeout: 40.0,
+    },
   };
 }

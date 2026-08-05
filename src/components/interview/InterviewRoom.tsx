@@ -13,6 +13,8 @@ import {
 } from "@/lib/voice/customs";
 import {
   buildPracticeCustoms,
+  INTERVIEWERS,
+  type InterviewerGender,
   type PracticeDrive,
 } from "@/lib/voice/practiceCustoms";
 import { buildClinicalCustoms } from "@/lib/voice/clinicalCustoms";
@@ -335,6 +337,16 @@ export default function InterviewRoom({
   // does — someone who blocks or stammers, thinks in long pauses, or is
   // sitting somewhere noisy.
   const [usePtt, setUsePtt] = useState(false);
+  // Which interviewer the student meets. Client state only, exactly like the
+  // PTT choice above — it is a per-session preference, not a fact about the
+  // student, so nothing is persisted and there is no schema for it.
+  //
+  // Female is the default because "simran" is the Sarvam speaker already
+  // proven in production (nimcCustoms.ts); "shubh" is its untested male
+  // counterpart. With the picker disabled this never moves off "female".
+  // Mirrored for the same reason usePttRef exists: the WebRTC bootstrap effect
+  // below reads this while building customs and must not re-run when it moves.
+  const interviewerRef = useRef<InterviewerGender>("female");
   const [pttState, setPttState] = useState<PttState>("idle");
   const [hasUserVid, setHasUserVid] = useState(false);
   const [hasAiVid, setHasAiVid] = useState(false);
@@ -835,7 +847,11 @@ export default function InterviewRoom({
                 ? buildWorkflowCustoms(candidateName, workflow)
                 : scenario
                   ? buildClinicalCustoms(candidateName, scenario)
-                  : buildPracticeCustoms(candidateName, drive);
+                  : buildPracticeCustoms(
+                      candidateName,
+                      drive,
+                      interviewerRef.current,
+                    );
 
       // PTT is a per-session override, not a property of the flow — which is
       // what lets one builder serve both the student who chose it and the one
@@ -1363,6 +1379,67 @@ export default function InterviewRoom({
               student has to identify themselves to claim: it is two ways of
               taking a turn, and either is a normal choice. Free-flowing stays
               the default so nothing changes for anyone who doesn't want it. */}
+          {/* INTERVIEWER PICKER — DISABLED. Every student gets the female
+              interviewer (Shreya, Sarvam voice "simran"), which is the default
+              `buildPracticeCustoms` already falls back to, so removing the UI
+              alone is enough to force it — no other change is needed.
+
+              To re-enable: uncomment the block below and restore the
+              `interviewer`/`setInterviewer` useState by the PTT state near the
+              top of this component. `interviewerRef` is deliberately kept: it
+              is what the WebRTC bootstrap reads, and with no UI to move it it
+              simply stays on "female".
+
+              The male option (Aakash, voice "shubh") is still wired end to end
+              in practiceCustoms.ts and works if passed — "shubh" is the one
+              value in this flow never exercised in production, so it wants a
+              live check before it goes back in front of students. */}
+          {/*
+          {variant === "practice" && !roleplay && !workflow && !scenario && (
+            <fieldset className="mt-6 rounded-xl border border-line bg-card p-4">
+              <legend className="px-1 text-xs uppercase tracking-wide text-muted">
+                Who&rsquo;ll interview you
+              </legend>
+              <div className="mt-1 flex flex-col gap-2">
+                {(
+                  [
+                    { value: "female", title: `${INTERVIEWERS.female.name} (female voice)` },
+                    { value: "male", title: `${INTERVIEWERS.male.name} (male voice)` },
+                  ] as const
+                ).map((option) => (
+                  <label
+                    key={option.value}
+                    className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition ${
+                      interviewer === option.value
+                        ? "border-brand bg-brand-soft"
+                        : "border-line hover:border-brand/40"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="interviewer"
+                      className="mt-0.5 shrink-0 accent-brand"
+                      checked={interviewer === option.value}
+                      onChange={() => {
+                        setInterviewer(option.value);
+                        interviewerRef.current = option.value;
+                      }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-ink">
+                        {option.title}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 px-1 text-xs leading-snug text-muted">
+                Only the voice and name change — the questions, the coaching and
+                the scoring are identical either way.
+              </p>
+            </fieldset>
+          )}
+          */}
           {pushToTalk && (
             <fieldset className="mt-6 rounded-xl border border-line bg-card p-4">
               <legend className="px-1 text-xs uppercase tracking-wide text-muted">

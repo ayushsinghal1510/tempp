@@ -47,6 +47,10 @@ export function buildCompanyContext(input: {
   tierProfile?: TierProfileLite;
   /** Coaching rounds teach & improve; test rounds only measure retention. */
   roundKind?: "coaching" | "test";
+  /** Who the student hears. Defaults to Franklin, which is what the company
+   *  flow (customs.ts) still uses; the practice flow passes the interviewer
+   *  the student picked so the greeting and the voice agree. */
+  interviewerName?: string;
 }): CompanyContext {
   const {
     companyName,
@@ -59,6 +63,7 @@ export function buildCompanyContext(input: {
     research = null,
     tierProfile = null,
     roundKind = "coaching",
+    interviewerName = "Franklin",
   } = input;
 
   const role = jobTitle?.trim() || "the open role";
@@ -143,7 +148,7 @@ ${jobDescription?.trim() || "No detailed JD was provided — ask well-rounded qu
 WHAT TO PRIORITISE:
 Weight your questions and coaching toward these skills, strongest priority first: ${priorities}. Pull concrete question topics from the research and JD above rather than asking generic questions.`;
 
-  const greeting = `Hi ${candidateName}, welcome to your ${companyName} practice interview for ${role}. I'm Franklin — think of me as your coach and interviewer in one. We'll run real ${companyName}-style questions and I'll give you honest feedback as we go. Whenever you're ready, start by telling me a little about yourself.`;
+  const greeting = `Hi ${candidateName}, welcome to your ${companyName} practice interview for ${role}. I'm ${interviewerName} — think of me as your coach and interviewer in one. We'll run real ${companyName}-style questions and I'll give you honest feedback as we go. Whenever you're ready, start by telling me a little about yourself.`;
 
   return { name: companyName, greeting, systemPrompt, questionStyle };
 }

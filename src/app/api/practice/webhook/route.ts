@@ -53,8 +53,17 @@ function extractRoundId(body: Record<string, unknown>): string | null {
   return null;
 }
 
-// The only four kink types the UI knows how to colour and label.
-const KINK_TYPES = new Set(["suggestion", "acknowledged", "adopted", "repeated"]);
+// The only kink types the UI knows how to colour and label. Must stay in step
+// with TYPE_BADGE/TYPE_COLOR/TYPE_LABEL in lib/practice/topics.ts — anything
+// missing here is stripped below and the event is lost, so a type added to the
+// prompt without being added here silently never arrives.
+const KINK_TYPES = new Set([
+  "suggestion",
+  "acknowledged",
+  "adopted",
+  "demonstrated",
+  "repeated",
+]);
 
 /**
  * Drop a kink type the model invented.

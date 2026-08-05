@@ -32,6 +32,27 @@ const TTS_DEEPGRAM = {
   }),
 };
 
+/**
+ * Sarvam TTS — Indian-English voices, used by the interview track.
+ *
+ * The key shape is NOT a guess: nimcCustoms.ts has been sending
+ * `{ service: "sarvam", speaker: "simran" }` on the PSTN track, so `speaker`
+ * is the key the driver actually reads and "simran" is a speaker id proven in
+ * production. Note it is `speaker`, not `model` — Deepgram's block above uses
+ * `model` and the two are not interchangeable. A `model` key here would be
+ * accepted and silently ignored, which is exactly how the `language` vs
+ * `language-hints` bug in the Soniox block below went unnoticed for weeks.
+ *
+ * Same reasoning as Deepgram on sample-rate/encoding: not sent, because
+ * `apply_audio_profile()` overwrites them from the transport regardless.
+ */
+export const TTS_SARVAM = {
+  buildId: ({ speaker }: { speaker: string }) => ({
+    service: "sarvam",
+    speaker,
+  }),
+};
+
 const STT_DEEPGRAM_STREAMING = {
   defaults: { model: "nova-3", language: "en-IN" },
   buildId: ({ model, language }: { model?: string; language?: string }) => ({
