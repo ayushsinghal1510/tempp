@@ -6,6 +6,7 @@
 // of what a score means, so a student's own dashboard and their educator's
 // roll-up can never disagree about the same round.
 
+import type { StudentReadiness } from "@prisma/client";
 import type { TopicDict, TopicMeta } from "./topics";
 import type { FunnelStage } from "@/lib/tenants/config";
 import {
@@ -16,14 +17,35 @@ import {
   latestTopicScores,
   overallScore,
   sessionDurationSeconds,
+  sessionImprovement,
   type RoundWithTurns,
 } from "./metrics";
+
+/**
+ * A round plus the identity of the thing it was run against.
+ *
+ * The relation, not `PracticeRound.companyName` — that column is the legacy
+ * denormalized copy and is null on every round created since PracticeCompany
+ * existed, so a list built on it would show a column of dashes. `company` is
+ * still nullable because the pre-PracticeCompany rows genuinely have nothing
+ * to point at; every renderer falls back to the legacy string and then to a
+ * dash, in that order.
+ */
+export type RoundWithCompany = RoundWithTurns & {
+  company: { id: string; companyName: string } | null;
+};
 
 export type StudentRounds = {
   userId: string;
   name: string;
   email: string;
-  rounds: RoundWithTurns[];
+  /**
+   * Educator-set, and carried on every one of these reads because the class,
+   * company and student lists all show it — fetching it per page would mean
+   * three more round trips for one enum.
+   */
+  readiness: StudentReadiness;
+  rounds: RoundWithCompany[];
 };
 
 function scoredRounds(rounds: RoundWithTurns[]): RoundWithTurns[] {
@@ -425,4 +447,58 @@ export function bailOuts(
     }
   }
   return out.sort((a, b) => a.turnCount - b.turnCount);
+}
+
+// ─────────────────────────── the session list ───────────────────────────
+
+/** One row of the educator's session list — see components/educator/SessionsList. */
+export type SessionListRow = {
+  id: string;
+  label: string;
+  studentId: string;
+  studentName: string;
+  companyName: string | null;
+  date: Date;
+  turns: number;
+  improvement: number | null;
+  completed: boolean;
+};
+
+/**
+ * Flatten a set of students into one list of their sessions, newest first.
+ *
+ * The "Session N" label is numbered PER STUDENT and in the order they were
+ * run, which is why it is assigned before the sort: a student's third session
+ * is their third whichever list it turns up in, and renumbering it by its
+ * position in a mixed class list would mean the same round is called something
+ * different on two pages.
+ *
+ * Pass a single-element array to get one student's sessions in the same shape;
+ * that is what the company page does for each of its students.
+ */
+export function sessionListRows(
+  students: StudentRounds[],
+  topics: TopicMeta[],
+): SessionListRow[] {
+  return students
+    .flatMap((s) =>
+      s.rounds.map((r, i) => ({
+        id: r.id,
+        label: `Session ${i + 1}`,
+        studentId: s.userId,
+        studentName: s.name,
+        // Relation, then the legacy denormalized column, then nothing —
+        // see RoundWithCompany.
+        companyName: r.company?.companyName ?? r.companyName ?? null,
+        date: r.createdAt,
+        turns: r.turns.length,
+        // Null rather than 0 on an unscored round: 0 means "no change", and a
+        // session nobody scored has not stayed the same, it has no reading.
+        improvement: r.turns.some((t) => t.topics != null)
+          ? sessionImprovement(r, topics)
+          : null,
+        completed: r.status === "completed",
+      })),
+    )
+    .sort((a, b) => b.date.getTime() - a.date.getTime());
 }

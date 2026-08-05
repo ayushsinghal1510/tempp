@@ -6,6 +6,7 @@ import { RadarGrid } from "@/components/charts/radar-grid";
 import { RadarAxis } from "@/components/charts/radar-axis";
 import { RadarLabels } from "@/components/charts/radar-labels";
 import { RadarArea } from "@/components/charts/radar-area";
+import RadarValues from "@/components/charts/radar-values";
 import type { RadarData } from "@/components/charts/radar-context";
 import { cn } from "@/lib/utils";
 import ChartSwitch from "./ChartSwitch";
@@ -73,6 +74,13 @@ export default function TopicRadar({
               className="[&_path]:[fill-opacity:0.22]"
             />
           ))}
+          {/* Last, so its hit targets sit above every polygon — a vertex
+              belonging to a series drawn first would otherwise be covered by
+              whatever was drawn over it. Fed the RAW values rather than the
+              normalized ones the chart draws from: `effectiveMax` moves when
+              "scale to fit" is toggled, and the readout must say 7, not the
+              70 or 94 that the same point is worth on the two grids. */}
+          <RadarValues values={series.map((s) => s.values)} />
         </RadarChart>
       </div>
       {series.length > 1 && (

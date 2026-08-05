@@ -80,6 +80,14 @@ export function buildNimcCustoms({ brand }: NimcCustomsOptions = {}) {
     // chunk before falling back. Below ~2s the filler and the reply collide.
     "streaming-grace-ms": 2500,
     "process-type": "speech-native",
+    // How long a speaker has to stop before the runtime closes their turn.
+    // Short, because the far end interrupts constantly and a long tail makes
+    // the agent talk over someone who has already started their next sentence.
+    "speaker-turn-timeout-ms": 600,
+    // Light background suppression. Kept low deliberately: this is 8kHz phone
+    // audio that is already lossy, and aggressive isolation eats the quiet
+    // ends of words before it eats the room noise.
+    "voice-isolation": 0.1,
     agent_id: {
       workflow: {
         nodes: {
@@ -231,7 +239,24 @@ export function buildNimcCustoms({ brand }: NimcCustomsOptions = {}) {
     // soniox rather than the practice track's deepgram, and the language hint
     // is the load-bearing part: this is 8kHz phone audio with Hindi and
     // English mixed inside single sentences.
-    stt_id: { service: "soniox", language: ["hi", "en"] },
+    //
+    // The two speaker flags are the one place this block departs from
+    // server.js's overrides. A PSTN call is not a clean single-speaker feed:
+    // the agent's own audio leaks back over the line, and a student on speaker
+    // in a room with family gets their voices cut into the same stream. Both
+    // land in `user_input` as though the student had said them. Locking to the
+    // first speaker soniox diarises and capping the count at one makes the far
+    // end exactly one voice for the whole call.
+    stt_id: {
+      service: "soniox",
+      language: ["hi", "en"],
+      // Diarization has to be on for the two flags below to mean anything —
+      // there is no "first speaker" to lock to until soniox is separating
+      // speakers in the first place.
+      "enable-speaker-diarization": true,
+      "speaker-lock": "first",
+      "max-speakers": 1,
+    },
     "pre-fire": true,
     "pre-fire-config": { min: 10, max: 5000, current: 40 },
     "grain-voice": false,

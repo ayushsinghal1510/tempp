@@ -1,7 +1,11 @@
 // Ported from the old app's webrtc.js. The hardcoded COMPANIES/agent presets
 // are gone — the company comes in as `company` (built from the cohort vacancy).
 
-import { buildVoiceCustoms, type VoiceSettings } from "./voiceCustoms";
+import {
+  buildVoiceCustoms,
+  STT_SONIOX_EN,
+  type VoiceSettings,
+} from "./voiceCustoms";
 import type { CompanyContext } from "./companyContext";
 
 export async function waitForIceGathering(pc: RTCPeerConnection): Promise<void> {
@@ -84,7 +88,9 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
 
   return {
     "warmup-agent": true,
-    "process-type": "speech-native",
+    // stt-native, not speech-native: the graph now runs off soniox transcript
+    // rather than the audio pipeline's own speech handling.
+    "process-type": "stt-native",
     faces: [
       {
         uuid: "fd2741f8-652a-48cd-b4dd-6881d4dd7638",
@@ -137,8 +143,9 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
               },
               prompt_template: "base_llm",
               system_prompt: systemPrompt,
-              service: "groq",
-              model: "openai/gpt-oss-120b",
+              // Same provider/model as the nimc call track.
+              service: "openrouter",
+              model: "google/gemini-3.1-flash-lite-preview",
               history_key: "conversation_history",
               llm_return_type: {
                 speak: {
@@ -171,7 +178,17 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
       },
       "webhook-url": WEBHOOK_URL,
     },
-    ...buildVoiceCustoms(voiceSettings),
+    // pre-fire OFF. buildVoiceCustoms sends `"pre-fire-config": {}` when it is
+    // false, so there is no preFireCurrent to carry here — turning it back on
+    // means restoring both the flag and the value. Settings sit after the flag
+    // so an admin-supplied voiceSettings still wins if one ever carries one.
+    ...buildVoiceCustoms({ preFire: false, ...(voiceSettings ?? {}) }),
+    // Overrides the deepgram stt_id buildVoiceCustoms just spread — order is
+    // load-bearing, this line has to stay below the spread. Soniox, English
+    // only; see STT_SONIOX_EN. Nothing sets sttModel/sttLanguage on this track
+    // (buildCustoms is called with no voiceSettings at all), so no admin choice
+    // is being thrown away here.
+    stt_id: STT_SONIOX_EN,
     // vision_id — DISABLED for now. Re-enable by uncommenting this block.
     //
     // This is the frame analyser: it samples the student's camera at 1 fps and

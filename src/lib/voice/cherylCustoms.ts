@@ -26,7 +26,7 @@
 // acceptably on the same two expressions. Swap the UUIDs when his own are cut;
 // nothing else in this file needs to change.
 
-import { buildVoiceCustoms } from "./voiceCustoms";
+import { buildVoiceCustoms, STT_SONIOX_EN } from "./voiceCustoms";
 import {
   VX_SERVER,
   FLOW_API_KEY,
@@ -79,7 +79,9 @@ You are speaking out loud, at a retail service counter, to a frontline trainee n
 
   return {
     "warmup-agent": true,
-    "process-type": "speech-native",
+    // stt-native, not speech-native: the graph now runs off soniox transcript
+    // rather than the audio pipeline's own speech handling.
+    "process-type": "stt-native",
     faces: CHERYL_FACES,
     agent_id: {
       workflow: {
@@ -128,8 +130,11 @@ You are speaking out loud, at a retail service counter, to a frontline trainee n
               },
               prompt_template: "base_llm",
               system_prompt: systemPrompt,
-              service: "groq",
-              model: "openai/gpt-oss-120b",
+              // Same provider/model as the nimc call track — and as `feedback`
+              // and `summary` below, which moved with it rather than being left
+              // on groq.
+              service: "openrouter",
+              model: "google/gemini-3.1-flash-lite-preview",
               history_key: "conversation_history",
               // Deepgram TTS: no emotion tagging. The reference flow set this
               // true against ElevenLabs v3, whose bracketed tags this voice
@@ -211,8 +216,8 @@ You are speaking out loud, at a retail service counter, to a frontline trainee n
               },
               prompt_template: "base_llm",
               system_prompt: CHERYL_FEEDBACK_PROMPT,
-              service: "groq",
-              model: "openai/gpt-oss-120b",
+              service: "openrouter",
+              model: "google/gemini-3.1-flash-lite-preview",
               history_key: "feedback_conversation_history",
               emotion: false,
               llm_return_type: {
@@ -245,8 +250,8 @@ You are speaking out loud, at a retail service counter, to a frontline trainee n
               },
               prompt_template: "base_llm",
               system_prompt: CHERYL_SUMMARY_PROMPT,
-              service: "groq",
-              model: "openai/gpt-oss-120b",
+              service: "openrouter",
+              model: "google/gemini-3.1-flash-lite-preview",
               // Shared with `feedback` on purpose: both are reading the same
               // finished conversation, and neither is a participant in it.
               history_key: "feedback_conversation_history",
@@ -309,8 +314,13 @@ You are speaking out loud, at a retail service counter, to a frontline trainee n
     // him and a silent counter is exactly what a man in a hurry comments on.
     ...buildVoiceCustoms({
       ttsModel: "aura-2-odysseus-en",
+      // Off — sends `"pre-fire": false` and an empty pre-fire-config.
+      preFire: false,
       inactivityMessage:
         "Hello? I am still standing here. There are people waiting behind me, you know.",
     }),
+    // Below the spread on purpose — it replaces the deepgram stt_id that
+    // buildVoiceCustoms sets. Soniox, English only; see STT_SONIOX_EN.
+    stt_id: STT_SONIOX_EN,
   };
 }

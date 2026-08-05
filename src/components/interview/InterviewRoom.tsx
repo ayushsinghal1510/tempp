@@ -218,6 +218,44 @@ const SESSION_END_MAX_WAIT_MS = 15000;
  */
 const TRANSCRIPT_POLL_MS = 3000;
 
+// How long the backend waits after `ptt_up` before committing the turn. The
+// streaming STT provider emits its final transcript slightly after the audio,
+// so committing on the release itself clips the last word or two. 400ms is the
+// server default, restated here because it is a number worth tuning from the
+// client: raise it (500-700) if ends of turns are getting cut, lower it
+// (250-300) if the gap between release and reply feels sluggish.
+//
+// A re-press inside this window CANCELS the pending commit and continues the
+// same turn — which is why a student who releases, thinks of one more thing,
+// and presses again gets one coherent answer rather than two fragments.
+const PTT_RELEASE_GRACE_MS = 400;
+
+/**
+ * How long "Got it…" is allowed to stand before the button falls back to
+ * "Hold to talk".
+ *
+ * The commit indicator used to clear on one signal only: the reply starting.
+ * That leaves two ways to strand it forever, and both are reachable by tapping
+ * the button rather than holding it.
+ *   1. A tap so short it captures no speech commits an empty turn, the server
+ *      has nothing to answer, no reply ever comes, and the button sits on
+ *      "Got it…" for the rest of the session.
+ *   2. Releasing while the AI is already mid-sentence never produces the
+ *      false→true transition on `aiSpeaking` that the reset watches for, so
+ *      the indicator stays stuck even though the turn resolved fine.
+ * Either way the student sees a permanently busy button, presses it again
+ * because nothing is happening, and gets the same result — the loop they
+ * cannot get out of.
+ *
+ * Generous on purpose: this is a backstop for a stuck indicator, not a
+ * timeout on the turn. A real reply almost always lands well inside it and
+ * clears the state through the normal path.
+ */
+const PTT_COMMIT_TIMEOUT_MS = 8000;
+
+/** idle → (press) → open → (release) → committing → (reply starts) → idle */
+type PttState = "idle" | "open" | "committing";
+
 export default function InterviewRoom({
   roundId,
   candidateName,
@@ -229,6 +267,7 @@ export default function InterviewRoom({
   kindLabel,
   backHref,
   variant = "company",
+  pushToTalk = false,
 }: {
   roundId: string;
   candidateName: string;
@@ -267,6 +306,14 @@ export default function InterviewRoom({
   backHref: string;
   /** "practice" runs the generic, deliberately-scored practice workflow instead. */
   variant?: "company" | "practice";
+  /**
+   * Whether this track OFFERS push-to-talk, not whether it is on — the student
+   * picks that on the preflight screen and the default is off (free-flowing,
+   * exactly as before). Passed only by the tracks whose flow is set up for it:
+   * the backend forces `stt-native` when PTT is on, so a flow still running
+   * `speech-native` would have its process type changed underneath it.
+   */
+  pushToTalk?: boolean;
 }) {
   const interviewerName =
     variant === "practice"
@@ -282,6 +329,13 @@ export default function InterviewRoom({
   const [aiState, setAiState] = useState<AiState>("waiting");
   const [aiSpeaking, setAiSpeaking] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
+  // The student's choice on the preflight screen. Off by default: the ordinary
+  // session is free-flowing, and PTT is the option for anyone who wants the
+  // turn to end when THEY say it does rather than when a silence threshold
+  // does — someone who blocks or stammers, thinks in long pauses, or is
+  // sitting somewhere noisy.
+  const [usePtt, setUsePtt] = useState(false);
+  const [pttState, setPttState] = useState<PttState>("idle");
   const [hasUserVid, setHasUserVid] = useState(false);
   const [hasAiVid, setHasAiVid] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -310,6 +364,21 @@ export default function InterviewRoom({
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  // The PTT data channel, and whether a key/pointer is currently down.
+  //
+  // `usePtt` is mirrored into a ref because the WebRTC bootstrap effect reads
+  // it inside `connect()` and keys only off `started`. The value cannot change
+  // once a session is running (the toggle only exists on the preflight screen),
+  // so this is about reading it without re-arming the connection, not about
+  // tracking changes.
+  const pttChannelRef = useRef<RTCDataChannel | null>(null);
+  const pttHeldRef = useRef(false);
+  const usePttRef = useRef(false);
+  // Deadline on the "committing" indicator — see PTT_COMMIT_TIMEOUT_MS.
+  const pttCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirrors `aiSpeaking` so the VAD callback can tell a reply STARTING from
+  // the same reply still going: it fires per audio frame, not per utterance.
+  const aiSpeakingRef = useRef(false);
   const userVideoRef = useRef<HTMLVideoElement>(null);
   const aiAudioRef = useRef<HTMLAudioElement>(null);
   const aiVideoRef = useRef<HTMLVideoElement>(null);
@@ -474,13 +543,72 @@ export default function InterviewRoom({
     [],
   );
 
+  // ── Push-to-talk transport ──
+  //
+  // The two halves are deliberately separate. `pttDown`/`pttUp` are guarded by
+  // a local `held` latch so a repeated keydown (browsers autorepeat ~30×/s
+  // while a key is held) can never restart a turn that is already open, and so
+  // a stray release can never send an unmatched `ptt_up`.
+  const sendPtt = useCallback((type: "ptt_down" | "ptt_up") => {
+    const ch = pttChannelRef.current;
+    if (ch?.readyState === "open") ch.send(JSON.stringify({ type }));
+  }, []);
+
+  /** Cancels a pending commit-indicator deadline, if one is armed. */
+  const clearCommitTimer = useCallback(() => {
+    if (pttCommitTimerRef.current) {
+      clearTimeout(pttCommitTimerRef.current);
+      pttCommitTimerRef.current = null;
+    }
+  }, []);
+
+  const pttDown = useCallback(() => {
+    if (pttHeldRef.current) return;
+    pttHeldRef.current = true;
+    // A press inside the release grace window cancels the pending commit
+    // server-side and continues the same turn, so the "Got it…" deadline that
+    // went with it has to go too — otherwise it fires mid-turn and the button
+    // says idle while the mic is open.
+    clearCommitTimer();
+    sendPtt("ptt_down");
+    // Deliberately NOT setting "open" here. The indicator has to tell the
+    // truth about what the server is capturing, and the gate opens when the
+    // message lands — roughly one round trip later. The `ptt_state` ack is
+    // what promotes this to "open".
+  }, [sendPtt, clearCommitTimer]);
+
+  const pttUp = useCallback(() => {
+    if (!pttHeldRef.current) return;
+    pttHeldRef.current = false;
+    sendPtt("ptt_up");
+    // "committing" covers the release grace window. Without a state here the
+    // UI goes blank between release and the reply, which is the single biggest
+    // source of "did it hear me?" double-presses.
+    setPttState("committing");
+    // ...and this is what guarantees it ends. See PTT_COMMIT_TIMEOUT_MS for
+    // the two ways the reply-based reset never arrives.
+    clearCommitTimer();
+    pttCommitTimerRef.current = setTimeout(() => {
+      pttCommitTimerRef.current = null;
+      // Only if nothing else has moved it on: a press since then has the mic
+      // open again, and stamping "idle" over that would be a lie.
+      setPttState((s) => (s === "committing" ? "idle" : s));
+    }, PTT_COMMIT_TIMEOUT_MS);
+  }, [sendPtt, clearCommitTimer]);
+
   const cleanup = useCallback(() => {
+    // Commit whatever the student managed to say before the transport goes.
+    // A duplicate `ptt_up` is logged and ignored server-side, so this is free
+    // insurance rather than something to be careful about.
+    pttUp();
+    clearCommitTimer();
+    pttChannelRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     pcRef.current?.close();
     pcRef.current = null;
     audioCtxRef.current?.close();
     audioCtxRef.current = null;
-  }, []);
+  }, [pttUp, clearCommitTimer]);
 
   // WebRTC bootstrap
   useEffect(() => {
@@ -556,6 +684,47 @@ export default function InterviewRoom({
       pcRef.current = pc;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
+      // The data channel MUST exist before createOffer() — the backend only
+      // listens for one (`pc.on('datachannel')`) and never opens its own, so a
+      // channel added later would need a renegotiation the server isn't going
+      // to drive. Created here, it rides the first SDP.
+      //
+      // Ordered and reliable, i.e. the defaults, left explicitly alone: a
+      // dropped or reordered `ptt_up` would leave the mic latched open on the
+      // server with nothing in the UI to say so. That guarantee is the entire
+      // reason this rides a data channel instead of anything cheaper.
+      if (usePttRef.current) {
+        const ch = pc.createDataChannel("chat");
+        pttChannelRef.current = ch;
+        // Reconnect safety. `connect()` runs again after a dropped connection,
+        // and a student holding the key at the moment it dropped would leave
+        // the latch stuck true — every later press then no-ops and the mic
+        // never opens again for the rest of the session.
+        pttHeldRef.current = false;
+        setPttState("idle");
+        ch.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg?.type !== "ptt_state") return;
+            // Only "open" is taken from the ack. A "closed" arriving after a
+            // release must NOT reset the indicator to idle — the turn is still
+            // in flight through the grace window, and `committing` is what
+            // says so. Idle is restored when the reply actually starts.
+            if (msg.state === "open") setPttState("open");
+          } catch {
+            // A malformed frame is not worth breaking the call over.
+          }
+        };
+        // The channel going means nothing can be in flight any more, so the
+        // latch is dropped with the indicator. Leaving `held` true here is the
+        // other way the mic never opens again: every later press no-ops.
+        ch.onclose = () => {
+          pttHeldRef.current = false;
+          clearCommitTimer();
+          setPttState("idle");
+        };
+      }
+
       pc.ontrack = (e) => {
         console.log(
           `[RTC] ontrack: kind=${e.track.kind} id=${e.track.id} readyState=${e.track.readyState} muted=${e.track.muted} streams=${e.streams.length} streamTracks=${e.streams[0]?.getTracks().length ?? 0} (audio=${e.streams[0]?.getAudioTracks().length ?? 0}, video=${e.streams[0]?.getVideoTracks().length ?? 0})`,
@@ -575,10 +744,25 @@ export default function InterviewRoom({
             an,
             10,
             () => {
+              // The VAD calls this on every frame it hears speech, not once
+              // per utterance — so anything that must happen at the START of a
+              // reply is gated on the ref, and only the transition runs it.
+              const wasSpeaking = aiSpeakingRef.current;
+              aiSpeakingRef.current = true;
               setAiSpeaking(true);
               setAiState("speaking");
+              // The reply arriving is what ends the commit window — not a
+              // timer, and not the server's "closed" ack, both of which would
+              // clear the indicator while the student is still waiting to find
+              // out whether they were heard. (PTT_COMMIT_TIMEOUT_MS is the
+              // backstop for when this signal never comes at all.)
+              if (!wasSpeaking) {
+                clearCommitTimer();
+                setPttState((s) => (s === "committing" ? "idle" : s));
+              }
             },
             () => {
+              aiSpeakingRef.current = false;
               setAiSpeaking(false);
               setAiState("listening");
             },
@@ -640,7 +824,7 @@ export default function InterviewRoom({
       await pc.setLocalDescription(offer);
       await waitForIceGathering(pc);
 
-      const customs =
+      const baseCustoms =
         variant !== "practice"
           ? buildCustoms(company!, candidateName)
           : roleplay === "pr"
@@ -652,6 +836,31 @@ export default function InterviewRoom({
                 : scenario
                   ? buildClinicalCustoms(candidateName, scenario)
                   : buildPracticeCustoms(candidateName, drive);
+
+      // PTT is a per-session override, not a property of the flow — which is
+      // what lets one builder serve both the student who chose it and the one
+      // who didn't. The builder ships the free-flowing shape (speech-native,
+      // pre-fire on) and this replaces the three keys that cannot survive a
+      // held key:
+      //
+      //   process-type    the backend forces stt-native under PTT and logs a
+      //                   warning; sending it ourselves means the flow and the
+      //                   server agree instead of the server correcting us.
+      //   pre-fire        it exists to predict where a turn ends. PTT states
+      //                   the turn end outright, so the prediction is at best
+      //                   redundant and at worst fires mid-thought.
+      //   pre-fire-config emptied with it, the same way buildVoiceCustoms
+      //                   empties it whenever the flag is false.
+      const customs = usePttRef.current
+        ? {
+            ...baseCustoms,
+            "push-to-talk": true,
+            "ptt-release-grace-ms": PTT_RELEASE_GRACE_MS,
+            "process-type": "stt-native",
+            "pre-fire": false,
+            "pre-fire-config": {},
+          }
+        : baseCustoms;
 
       // Same branch as above: `workflow` (cus) and the roleplays are the tracks
       // with an avatar to send video for, and the roleplays' is the point —
@@ -759,6 +968,51 @@ export default function InterviewRoom({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
+
+  // ── Push-to-talk: the space bar ──
+  //
+  // Three guards here and every one of them is load-bearing:
+  //   e.repeat      — a held key autorepeats keydown ~30×/s, and each repeat
+  //                   would otherwise restart the turn and cancel the commit.
+  //                   The `held` latch inside pttDown makes this safe anyway;
+  //                   both exist because the failure is silent.
+  //   preventDefault— Space scrolls the page, and re-activates whatever button
+  //                   happens to have focus (Leave, for instance).
+  //   blur / hidden — alt-tabbing mid-press means keyup never arrives, and the
+  //                   mic would stay latched open until the student came back
+  //                   and pressed again.
+  useEffect(() => {
+    if (!started || !usePtt) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat) return;
+      e.preventDefault();
+      pttDown();
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      e.preventDefault();
+      pttUp();
+    };
+    const onHide = () => {
+      if (document.hidden) pttUp();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", pttUp);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", pttUp);
+      document.removeEventListener("visibilitychange", onHide);
+    };
+  }, [started, usePtt, pttDown, pttUp]);
+
+  // (The commit window is closed from the VAD's speech-start callback in
+  // `connect()` — the reply actually starting is the signal, and doing it
+  // there keeps it out of a render-cascading effect.)
 
   // ── Self-recorded side-by-side composite (replaces voxio's own server-side
   // recording) — entirely best-effort. Any unsupported API here must never
@@ -1105,6 +1359,67 @@ export default function InterviewRoom({
             The AI interviewer opens the session. This is a practice run — speak
             naturally. Your microphone and camera will be requested.
           </p>
+          {/* Offered, never imposed, and never framed as an accommodation the
+              student has to identify themselves to claim: it is two ways of
+              taking a turn, and either is a normal choice. Free-flowing stays
+              the default so nothing changes for anyone who doesn't want it. */}
+          {pushToTalk && (
+            <fieldset className="mt-6 rounded-xl border border-line bg-card p-4">
+              <legend className="px-1 text-xs uppercase tracking-wide text-muted">
+                How you&rsquo;ll talk
+              </legend>
+              <div className="mt-1 flex flex-col gap-2">
+                {(
+                  [
+                    {
+                      value: false,
+                      title: "Free-flowing",
+                      hint: "Your turn ends when you pause.",
+                    },
+                    {
+                      value: true,
+                      title: "Hold to talk",
+                      hint: "Hold space while you speak. Pause as long as you like.",
+                    },
+                  ] as const
+                ).map((option) => (
+                  <label
+                    key={String(option.value)}
+                    className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition ${
+                      usePtt === option.value
+                        ? "border-brand bg-brand-soft"
+                        : "border-line hover:border-brand/40"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="turn-taking"
+                      // shrink-0 or the radio itself gets squeezed to nothing
+                      // once the label beside it runs long.
+                      className="mt-0.5 shrink-0 accent-brand"
+                      checked={usePtt === option.value}
+                      onChange={() => {
+                        setUsePtt(option.value);
+                        usePttRef.current = option.value;
+                      }}
+                    />
+                    {/* min-w-0 is the fix for the overflow: a flex child's
+                        default min-width is auto, which refuses to shrink
+                        below the longest unbroken run of text, so the hint
+                        pushed straight out of the card instead of wrapping. */}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-ink">
+                        {option.title}
+                      </span>
+                      <span className="block text-xs leading-snug text-muted">
+                        {option.hint}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <button
             type="button"
             onClick={() => setStarted(true)}
@@ -1446,19 +1761,77 @@ export default function InterviewRoom({
       )}
       </main>
 
-      <footer className="flex shrink-0 items-center justify-center gap-4 border-t border-line py-4">
-        <button
-          type="button"
-          onClick={toggleMic}
-          className={`grid h-11 w-11 place-items-center rounded-full border transition ${
-            micMuted
-              ? "border-danger bg-danger text-white"
-              : "border-line bg-card text-ink hover:border-brand/40"
-          }`}
-          title={micMuted ? "Unmute" : "Mute"}
-        >
-          {micMuted ? "🔇" : "🎤"}
-        </button>
+      <footer className="flex shrink-0 flex-wrap items-center justify-center gap-4 border-t border-line px-4 py-4">
+        {/* Mute and hold-to-talk are mutually exclusive on purpose. With PTT on
+            the mic is gated server-side, so a local mute would silently
+            swallow a held turn and look exactly like the agent ignoring the
+            student — the worst possible failure for the people this mode is
+            for. The hold button replaces it rather than sitting beside it. */}
+        {usePtt ? (
+          <button
+            type="button"
+            // Pointer events, not click: this has to react to the press and
+            // the release as separate moments. pointercancel is what fires
+            // when the OS takes the gesture away (a scroll, an incoming call).
+            //
+            // setPointerCapture is what makes a press survive the cursor or
+            // finger sliding off the button: every later event for that
+            // pointer is delivered here regardless of where it physically is,
+            // so the release is never lost to whatever is underneath. It also
+            // fixes a self-inflicted misfire — this button shrinks to 0.98
+            // while open, and a press near its edge moved the edge out from
+            // under a stationary cursor, firing pointerleave and cutting the
+            // turn the instant it started. That is the one that made repeated
+            // clicking look broken.
+            //
+            // lostpointercapture is the release of last resort: it fires
+            // whenever capture ends for any reason (including cancel), and
+            // pttUp is idempotent through the `held` latch, so an extra one
+            // costs nothing.
+            onPointerDown={(e) => {
+              e.preventDefault();
+              try {
+                e.currentTarget.setPointerCapture(e.pointerId);
+              } catch {
+                // Not supported / pointer already gone — the plain
+                // up/cancel handlers still cover the ordinary case.
+              }
+              pttDown();
+            }}
+            onPointerUp={pttUp}
+            onPointerCancel={pttUp}
+            onLostPointerCapture={pttUp}
+            className={`flex select-none items-center gap-2 rounded-full border px-6 py-3 text-sm font-semibold transition ${
+              pttState === "open"
+                ? "scale-[0.98] border-brand bg-brand text-primary-foreground"
+                : pttState === "committing"
+                  ? "border-brand/40 bg-brand-soft text-brand"
+                  : "border-line bg-card text-ink hover:border-brand/40"
+            }`}
+          >
+            <span aria-hidden>
+              {pttState === "committing" ? "⏳" : "🎤"}
+            </span>
+            {pttState === "open"
+              ? "Listening…"
+              : pttState === "committing"
+                ? "Got it…"
+                : "Hold to talk (space)"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={toggleMic}
+            className={`grid h-11 w-11 place-items-center rounded-full border transition ${
+              micMuted
+                ? "border-danger bg-danger text-white"
+                : "border-line bg-card text-ink hover:border-brand/40"
+            }`}
+            title={micMuted ? "Unmute" : "Mute"}
+          >
+            {micMuted ? "🔇" : "🎤"}
+          </button>
+        )}
         <button
           type="button"
           onClick={leave}

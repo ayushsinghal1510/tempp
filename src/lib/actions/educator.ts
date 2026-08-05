@@ -518,3 +518,52 @@ export async function removeMember(
   revalidatePath(`/educator/groups/${groupId}`);
   return { ok: true };
 }
+
+// ─────────────────────────── student readiness ───────────────────────────
+
+/**
+ * Mark a student ready (or not) to sit a real interview.
+ *
+ * The educator's judgement, stored as-is. It is not derived from scores and
+ * nothing recomputes it — see the StudentReadiness enum for why.
+ *
+ * REACHABILITY IS THE AUTHORISATION. There is no per-student ownership record
+ * to check: a practice student belongs to classes and holds assignments, not
+ * to an educator. So the check is the same one every educator read already
+ * makes — does this student hold an assignment on one of my org's companies,
+ * or sit in one of my org's classes. Either is enough, and a student who is in
+ * neither is reported as not found rather than as forbidden, because from this
+ * educator's side of the product they do not exist.
+ */
+export async function setStudentReadiness(
+  userId: string,
+  ready: boolean,
+): Promise<ActionResult> {
+  const { orgId } = await requireEducator();
+
+  const reachable = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      role: "practice",
+      OR: [
+        { practiceAssignments: { some: { company: { orgId } } } },
+        { practiceMemberships: { some: { group: { orgId } } } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (!reachable) return { error: "Student not found." };
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { readiness: ready ? "ready" : "not_ready" },
+  });
+
+  // Every educator surface that shows the badge. The student's own pages are
+  // deliberately not revalidated — nothing on their side reads this.
+  revalidatePath("/educator");
+  revalidatePath("/educator/students");
+  revalidatePath(`/educator/students/${userId}`);
+  revalidatePath("/educator/groups");
+  return { ok: true };
+}

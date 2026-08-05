@@ -41,6 +41,34 @@ function mmss(totalSeconds: number): string {
 }
 
 /**
+ * Where a kink's dot sits vertically inside its column, as a 0-1 fraction of
+ * the plot area. One kink sits dead centre (which is what a single-kink turn
+ * has always looked like); more than one fans out evenly around the centre, so
+ * three dots land at a quarter, half and three-quarters. Even spacing rather
+ * than stacking on the series' actual y-values: two kinks on turn 4 are one
+ * coaching moment that touched two topics, and separating them by score would
+ * put them on top of each other again the moment the scores agreed.
+ */
+function dotFraction(i: number, count: number): number {
+  return (i + 1) / (count + 1);
+}
+
+/** Keeps a hovered kink's card inside the plot instead of hanging off it —
+ *  flips to the dot's left past 60% across, and anchors top/bottom rather
+ *  than centring once the dot is near either edge. */
+function cardTransform(x: number, y: number): string {
+  const horizontal =
+    x > 0.6 ? "translateX(-100%) translateX(-8px)" : "translateX(8px)";
+  const vertical =
+    y < 0.3
+      ? "translateY(-6px)"
+      : y > 0.7
+        ? "translateY(-100%) translateY(6px)"
+        : "translateY(-50%)";
+  return `${horizontal} ${vertical}`;
+}
+
+/**
  * The per-session "6 topics over turns" chart — a Bklit multi-line with a
  * click-to-isolate legend. Kink events (coach suggestions/adoptions/repeats)
  * are an optional overlay: off by default (a clean Bklit read), and once
@@ -139,6 +167,26 @@ export default function TopicsTimeline({
     return Math.max(0, Math.min(1, (tSec - domainStart) / domainSpan));
   }
 
+  // Kinks that landed on the same turn share an x — and a checkpoint that
+  // touched posture AND framing AND approach is exactly that case. Rendered
+  // one-per-kink they drew at the same point at the same height, so all but
+  // the last were invisible and unhoverable: the student saw one dot and one
+  // explanation for a moment that had three. Group them by turn first, and
+  // the column decides where each dot sits.
+  const columns = new Map<
+    number,
+    { kink: TopicKink; id: string; series: TopicSeries }[]
+  >();
+  kinks.forEach((k, idx) => {
+    const s = series.find((sr) => sr.key === k.seriesKey);
+    if (!s || typeof s.values[k.index] !== "number") return;
+    const column = columns.get(k.index) ?? [];
+    // Index into `kinks` is in the id because seriesKey+turn is not unique on
+    // its own if a topic ever comes back with two events on one turn.
+    column.push({ kink: k, id: `${k.seriesKey}-${k.index}-${idx}`, series: s });
+    columns.set(k.index, column);
+  });
+
   function handleChartClick(e: MouseEvent<HTMLDivElement>) {
     if (!onSeekSeconds || domainSpan <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -218,64 +266,94 @@ export default function TopicsTimeline({
             pointerEvents: showKinks ? "auto" : "none",
           }}
         >
-          {kinks.map((k, idx) => {
-            const s = series.find((sr) => sr.key === k.seriesKey);
-            const val = s?.values[k.index];
-            if (!s || typeof val !== "number") return null;
-            const id = `${k.seriesKey}-${k.index}-${idx}`;
-            const isKinkActive = hoveredKink === id;
-            const f = fractionFor(seconds[k.index] ?? domainStart);
+          {Array.from(columns.entries()).map(([turnIndex, column]) => {
+            const f = fractionFor(seconds[turnIndex] ?? domainStart);
+            const hovered = column.find((c) => c.id === hoveredKink);
+            // Kink colour is the event type, not the topic, so a column can
+            // hold three colours at once. The guide line takes the hovered
+            // one's colour, and stays neutral at rest rather than picking one
+            // of them arbitrarily and implying the whole column is that type.
+            const uniform = column.every(
+              (c) => c.kink.color === column[0].kink.color,
+            );
+            const lineColor = hovered
+              ? hovered.kink.color
+              : uniform
+                ? column[0].kink.color
+                : "var(--faint)";
             return (
               <div
-                key={id}
+                key={turnIndex}
                 className="absolute"
                 style={{
                   left: axisLeft(f),
                   top: MARGIN.top,
                   bottom: MARGIN.bottom,
                   transform: "translateX(-50%)",
+                  // Lifts the whole column so its open card is never painted
+                  // under a neighbouring column's dots.
+                  zIndex: hovered ? 30 : undefined,
                 }}
               >
                 <div
                   className="absolute top-0 bottom-0 left-1/2 w-px -translate-x-1/2 transition-opacity"
-                  style={{ background: k.color, opacity: isKinkActive ? 0.9 : 0.22 }}
+                  style={{ background: lineColor, opacity: hovered ? 0.9 : 0.22 }}
                 />
-                {/* biome-ignore lint/a11y/noStaticElementInteractions: chart marker hover target */}
-                <div
-                  className="pointer-events-auto absolute left-1/2 -translate-x-1/2 cursor-pointer"
-                  style={{ top: "50%" }}
-                  onMouseEnter={() => setHoveredKink(id)}
-                  onMouseLeave={() => setHoveredKink(null)}
-                >
-                  <span
-                    className="block rounded-full ring-2 ring-canvas transition-all"
-                    style={{
-                      width: isKinkActive ? 11 : 7,
-                      height: isKinkActive ? 11 : 7,
-                      background: k.color,
-                      opacity: isKinkActive ? 1 : 0.35,
-                    }}
-                  />
-                </div>
-                {isKinkActive && (
-                  <div
-                    className="pointer-events-none absolute z-20 w-56 rounded-lg border border-line bg-card p-2.5 text-xs shadow-lg"
-                    style={{
-                      top: "50%",
-                      transform:
-                        f > 0.6
-                          ? "translateX(-100%) translateX(4px) translateY(-50%)"
-                          : "translateX(4px) translateY(-50%)",
-                    }}
-                  >
-                    <div className="font-medium" style={{ color: k.color }}>
-                      {s.label} · {k.label}
+                {column.map(({ kink: k, id, series: s }, i) => {
+                  const isKinkActive = hoveredKink === id;
+                  const v = dotFraction(i, column.length);
+                  const top = `${v * 100}%`;
+                  return (
+                    <div key={id}>
+                      {/* biome-ignore lint/a11y/noStaticElementInteractions: chart marker hover target */}
+                      <div
+                        className="pointer-events-auto absolute left-1/2 cursor-pointer"
+                        style={{ top, transform: "translate(-50%, -50%)" }}
+                        onMouseEnter={() => setHoveredKink(id)}
+                        onMouseLeave={() => setHoveredKink(null)}
+                      >
+                        {/* A padded box around a small dot: at three-plus per
+                            column the dots are the only hit target there is,
+                            and 7px of it is a hard thing to land a mouse on. */}
+                        <span className="block p-1.5">
+                          <span
+                            className="block rounded-full ring-2 ring-canvas transition-all"
+                            style={{
+                              width: isKinkActive ? 11 : 7,
+                              height: isKinkActive ? 11 : 7,
+                              background: k.color,
+                              opacity: isKinkActive ? 1 : 0.35,
+                            }}
+                          />
+                        </span>
+                      </div>
+                      {isKinkActive && (
+                        <div
+                          className="pointer-events-none absolute left-1/2 z-20 w-56 rounded-lg border border-line bg-card p-2.5 text-xs shadow-lg"
+                          style={{ top, transform: cardTransform(f, v) }}
+                        >
+                          <div className="font-medium" style={{ color: k.color }}>
+                            {s.label} · {k.label}
+                          </div>
+                          {k.description && (
+                            <p className="mt-1 text-ink">{k.description}</p>
+                          )}
+                          {/* Names the rest of the moment rather than leaving
+                              two silent dots to be discovered by accident. */}
+                          {column.length > 1 && (
+                            <p className="mt-1.5 border-t border-line pt-1.5 text-[11px] text-muted">
+                              {column.length} points in this coaching break —{" "}
+                              {column
+                                .filter((c) => c.id !== id)
+                                .map((c) => c.series.label)
+                                .join(", ")}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {k.description && (
-                      <p className="mt-1 text-ink">{k.description}</p>
-                    )}
-                  </div>
-                )}
+                  );
+                })}
               </div>
             );
           })}

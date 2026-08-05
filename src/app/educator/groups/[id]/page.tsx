@@ -12,9 +12,15 @@ import {
   groupFunnelRows,
   groupStudentRounds,
 } from "@/lib/practice/educatorQueries";
-import { assignmentFunnel } from "@/lib/practice/educatorMetrics";
+import {
+  assignmentFunnel,
+  sessionListRows,
+} from "@/lib/practice/educatorMetrics";
 import { tenantConfig } from "@/lib/tenants/config";
 import { DEGREE_LABEL } from "@/lib/research/expectationMatrix";
+import ClickableRow from "@/components/ui/ClickableRow";
+import ReadinessToggle from "@/components/educator/ReadinessToggle";
+import SessionsList from "@/components/educator/SessionsList";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +49,7 @@ export default async function EducatorGroupDetailPage({
                 email: true,
                 course: true,
                 cgpa: true,
+                readiness: true,
               },
             },
           },
@@ -61,6 +68,11 @@ export default async function EducatorGroupDetailPage({
   if (!group || group.orgId !== orgId) notFound();
 
   const funnel = assignmentFunnel(funnelRows, tenant.funnelStages);
+  // groupStudentRounds is scoped by class MEMBERSHIP, not by assignment, so
+  // this includes a member's sessions on a company they hold individually —
+  // which is the point: this is what the class has been doing, not what it
+  // was told to do.
+  const sessions = sessionListRows(students, tenant.topics);
 
   return (
     <DashboardShell user={user} nav={educatorNav(unitPlural)} title={group.name}>
@@ -139,6 +151,7 @@ export default async function EducatorGroupDetailPage({
                 <thead>
                   <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-faint">
                     <th className="pb-2 font-medium">Name</th>
+                    <th className="pb-2 font-medium">Readiness</th>
                     <th className="pb-2 font-medium">Email</th>
                     <th className="pb-2 font-medium">Course</th>
                     <th className="pb-2 font-medium">CGPA</th>
@@ -146,7 +159,11 @@ export default async function EducatorGroupDetailPage({
                 </thead>
                 <tbody>
                   {group.members.map((m) => (
-                    <tr key={m.id} className="border-b border-line last:border-0">
+                    <ClickableRow
+                      key={m.id}
+                      href={`/educator/students/${m.user.id}`}
+                      className="border-b border-line last:border-0"
+                    >
                       <td className="py-2.5">
                         <Link
                           href={`/educator/students/${m.user.id}`}
@@ -155,6 +172,12 @@ export default async function EducatorGroupDetailPage({
                           {m.user.name}
                         </Link>
                       </td>
+                      <td className="py-2.5">
+                        <ReadinessToggle
+                          userId={m.user.id}
+                          readiness={m.user.readiness}
+                        />
+                      </td>
                       <td className="py-2.5 text-muted">{m.user.email}</td>
                       <td className="py-2.5 text-muted">
                         {m.user.course ? DEGREE_LABEL[m.user.course] : "—"}
@@ -162,12 +185,33 @@ export default async function EducatorGroupDetailPage({
                       <td className="py-2.5 text-muted">
                         {m.user.cgpa ?? "—"}
                       </td>
-                    </tr>
+                    </ClickableRow>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+        </section>
+
+        {/* The class's actual output, newest first. A class is the one place
+            where a session row is genuinely (someone, something) — the same
+            student appears against several companies and the same company
+            against several students — so unlike the company and student pages
+            this list names BOTH, and neither column is redundant with the
+            heading above it. */}
+        <section className="card p-6">
+          <h3 className="font-semibold text-ink">Sessions</h3>
+          <p className="mt-0.5 text-sm text-muted">
+            Every session this class has run, newest first — who ran it and
+            what they ran it against.
+          </p>
+          <div className="mt-4">
+            <SessionsList
+              rows={sessions}
+              unitTitle={tenant.copy.unitTitle}
+              emptyMessage="Nobody in this class has run a session yet."
+            />
+          </div>
         </section>
       </div>
     </DashboardShell>

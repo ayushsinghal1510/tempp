@@ -21,6 +21,8 @@ import { tenantConfig, topicsFor } from "@/lib/tenants/config";
 import { DEGREE_LABEL } from "@/lib/research/expectationMatrix";
 import SessionsChart from "@/components/charts/bklit/SessionsChart";
 import TopicRadar from "@/components/charts/bklit/TopicRadar";
+import ClickableRow from "@/components/ui/ClickableRow";
+import ReadinessToggle from "@/components/educator/ReadinessToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,7 @@ export default async function EducatorStudentPage({
 }) {
   const { id } = await params;
   const user = await requireUser(["practice_admin"], "/educator/login");
-  const unitPlural = tenantConfig(user.tenant).copy.unitPlural;
+  const { unitPlural, unitTitle } = tenantConfig(user.tenant).copy;
   const orgId = await requireEducatorOrgId(user.id);
   const topics = topicsFor(user.tenant);
 
@@ -99,13 +101,30 @@ export default async function EducatorStudentPage({
           ← Students
         </Link>
 
-        <section className="card p-6">
-          <h2 className="text-xl font-bold text-ink">{student.name}</h2>
-          <p className="mt-0.5 text-sm text-muted">
-            {student.email}
-            {profile?.course && ` · ${DEGREE_LABEL[profile.course]}`}
-            {profile?.cgpa != null && ` · CGPA ${profile.cgpa}`}
-          </p>
+        <section className="card flex flex-wrap items-start justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-xl font-bold text-ink">{student.name}</h2>
+            <p className="mt-0.5 text-sm text-muted">
+              {student.email}
+              {profile?.course && ` · ${DEGREE_LABEL[profile.course]}`}
+              {profile?.cgpa != null && ` · CGPA ${profile.cgpa}`}
+            </p>
+          </div>
+          {/* The one place the call is made with the whole picture in front of
+              you — the trajectory, the stuck list and every session are on
+              this page. The same control on the list page is for changing your
+              mind, not for making the decision. */}
+          <div className="text-right">
+            <ReadinessToggle
+              userId={student.userId}
+              readiness={student.readiness}
+              size="md"
+            />
+            <p className="mt-1.5 max-w-56 text-xs text-faint">
+              Your call on whether they&apos;re ready for a real interview.
+              Nothing computes this, and the student never sees it.
+            </p>
+          </div>
         </section>
 
         <div className="card p-5 text-sm font-medium text-ink">
@@ -207,6 +226,7 @@ export default async function EducatorStudentPage({
                 <thead className="text-xs uppercase tracking-wide text-faint">
                   <tr className="border-b border-line">
                     <th className="pb-2">Session</th>
+                    <th className="pb-2">{unitTitle}</th>
                     <th className="pb-2">Date</th>
                     <th className="pb-2">Turns</th>
                     <th className="pb-2">Length</th>
@@ -218,9 +238,20 @@ export default async function EducatorStudentPage({
                   {student.rounds.map((r, i) => {
                     const improvement = sessionImprovement(r, topics);
                     return (
-                      <tr key={r.id} className="border-b border-line last:border-0">
+                      <ClickableRow
+                        key={r.id}
+                        href={`/educator/sessions/${r.id}`}
+                        className="border-b border-line last:border-0"
+                      >
                         <td className="py-2.5 font-medium text-ink">
                           Session {i + 1}
+                        </td>
+                        {/* Relation first, legacy column second, dash last —
+                            see RoundWithCompany. A round from before
+                            PracticeCompany existed has only the denormalized
+                            string, and rounds older still have neither. */}
+                        <td className="py-2.5 text-muted">
+                          {r.company?.companyName ?? r.companyName ?? "—"}
                         </td>
                         <td className="py-2.5 text-muted">
                           {new Date(r.createdAt).toLocaleDateString()}
@@ -244,7 +275,7 @@ export default async function EducatorStudentPage({
                             View →
                           </Link>
                         </td>
-                      </tr>
+                      </ClickableRow>
                     );
                   })}
                 </tbody>

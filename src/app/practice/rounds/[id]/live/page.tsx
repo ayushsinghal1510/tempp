@@ -107,6 +107,10 @@ export default async function PracticeInterviewLivePage({
       }
     : undefined;
 
+  // Offered here and nowhere else. buildPracticeCustoms is the only flow on
+  // this route declaring `stt-native`, which is what the backend forces the
+  // moment push-to-talk is on — offering it on a `speech-native` track would
+  // have the process type changed underneath a running session.
   return (
     <InterviewRoom
       variant="practice"
@@ -115,6 +119,7 @@ export default async function PracticeInterviewLivePage({
       drive={drive}
       kindLabel="Practice interview"
       backHref="/practice"
+      pushToTalk
     />
   );
 }

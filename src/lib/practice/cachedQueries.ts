@@ -172,7 +172,14 @@ export async function getRoundWithTurns(roundId: string) {
     () =>
       prisma.practiceRound.findUnique({
         where: { id: roundId },
-        include: { turns: { orderBy: { turnNumber: "asc" } } },
+        include: {
+          turns: { orderBy: { turnNumber: "asc" } },
+          // Two fields only. The results page names what the session was
+          // against — a student who ran four in a row otherwise has nothing on
+          // the page telling them which one they are looking at. `companyId`
+          // was already here for the back link, but an id is not a name.
+          company: { select: { id: true, companyName: true, jobTitle: true } },
+        },
         relationLoadStrategy: "join",
       }),
     [`practice-round-${roundId}`],

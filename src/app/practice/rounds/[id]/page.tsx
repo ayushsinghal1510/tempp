@@ -41,6 +41,17 @@ export default async function PracticeRoundResultsPage({
   const round = await getRoundWithTurns(id);
   if (!round || round.userId !== user.id) notFound();
 
+  // "Acme — ML Engineer", or just "Acme" when there is no role on the row.
+  // Null when this was a general practice round with no company at all, which
+  // is a real state on jer and not a missing value.
+  const companyName = round.company?.companyName ?? round.companyName ?? null;
+  const jobTitle = round.company?.jobTitle ?? round.jobTitle ?? null;
+  const companyLabel = companyName
+    ? jobTitle
+      ? `${companyName} — ${jobTitle}`
+      : companyName
+    : null;
+
   const series = topics.map((t) => ({
     key: t.key,
     label: t.label,
@@ -165,6 +176,14 @@ export default async function PracticeRoundResultsPage({
                 ? "Practice interview results"
                 : "Session"}
           </h1>
+          {/* Which one this was. The page title is the same on every session a
+              student has ever run, so without this a results page four rounds
+              deep is unidentifiable. Relation first, then the legacy
+              denormalized column for rounds that predate PracticeCompany;
+              a general practice round has neither and simply says so. */}
+          <p className="mt-1 text-base font-medium text-ink">
+            {companyLabel ?? "General practice — no specific company"}
+          </p>
           <p className="mt-1 text-sm text-muted">
             {round.status === "completed" ? "Completed" : "In progress"} ·{" "}
             {round.turns.length} turn{round.turns.length === 1 ? "" : "s"}{" "}
@@ -313,8 +332,16 @@ export default async function PracticeRoundResultsPage({
                         {turn.speak}
                       </p>
                     )}
+                    {/* The reason a score moved, shown rather than hidden.
+                        `description` used to live only in a `title` tooltip,
+                        which meant the one field that explains the number was
+                        invisible on touch and undiscoverable everywhere else —
+                        the student saw a topic and a figure and had to take
+                        both on faith. It is by construction a record of what
+                        the agent said out loud, so showing it costs nothing
+                        and turns the badge row into the actual explanation. */}
                     {Object.entries(turnTopics).some(([, dict]) => dict.type_) && (
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div className="mt-3 flex flex-col gap-2">
                         {Object.entries(turnTopics)
                           .filter(([, dict]) => dict.type_)
                           .map(([key, dict]) => {
@@ -323,17 +350,28 @@ export default async function PracticeRoundResultsPage({
                             const badge =
                               TYPE_BADGE[dict.type_ as string] ??
                               "bg-canvas text-muted";
+                            const description = dict.description?.trim();
                             return (
-                              <span
+                              <div
                                 key={key}
-                                title={dict.description ?? ""}
-                                className={`rounded-md px-2 py-0.5 text-xs font-medium ${badge}`}
+                                className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
                               >
-                                {label}{" "}
-                                {typeof dict.score === "number"
-                                  ? dict.score.toFixed(1)
-                                  : "—"}
-                              </span>
+                                <span
+                                  className={`rounded-md px-2 py-0.5 text-xs font-medium ${badge}`}
+                                >
+                                  {label}{" "}
+                                  {typeof dict.score === "number"
+                                    ? dict.score.toFixed(1)
+                                    : "—"}
+                                </span>
+                                {/* Absent on plenty of real kinks, so it is
+                                    conditional rather than an empty line. */}
+                                {description && (
+                                  <span className="text-xs text-muted">
+                                    {description}
+                                  </span>
+                                )}
+                              </div>
                             );
                           })}
                       </div>

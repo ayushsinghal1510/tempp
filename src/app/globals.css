@@ -221,6 +221,40 @@ body {
   * {
     @apply border-border outline-ring/50;
   }
+
+  /* Puts the hand cursor back on things you can click.
+
+     Tailwind v4's Preflight dropped the `button { cursor: pointer }` that v3
+     shipped, on the grounds that it matches the native browser default. The
+     result here is that every button in the app — every "Start session", every
+     filter, every toggle — reads as unclickable: the row highlights on hover
+     and the cursor stays an arrow, which says "this is just text" at the exact
+     moment the hover says otherwise.
+
+     `[role=...]` is included because several controls in this codebase are a
+     styled <span> with a role rather than a <button> (ChartSwitch, for one),
+     and those never got the cursor from any UA stylesheet in the first place.
+     Anchors are left alone — the UA already handles those, and adding them
+     here would also cover <a> tags with no href, which are not clickable.
+
+     Disabled controls are deliberately excluded rather than left as an arrow:
+     `not-allowed` is the one cursor that distinguishes "this does nothing"
+     from "this is not a control at all". */
+  button:not(:disabled),
+  select:not(:disabled),
+  summary,
+  label[for],
+  [role="button"]:not([aria-disabled="true"]),
+  [role="switch"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
 
 .dark {

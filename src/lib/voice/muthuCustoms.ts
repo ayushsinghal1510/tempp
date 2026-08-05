@@ -23,7 +23,7 @@
 // the officer before laying into them would undercut the character in the first
 // half-second of every turn. He is allowed to be a beat slow instead.
 
-import { buildVoiceCustoms } from "./voiceCustoms";
+import { buildVoiceCustoms, STT_SONIOX_EN } from "./voiceCustoms";
 import {
   VX_SERVER,
   FLOW_API_KEY,
@@ -84,7 +84,9 @@ You are speaking out loud, on a live call, to an officer named ${userName}. They
 
   return {
     "warmup-agent": true,
-    "process-type": "speech-native",
+    // stt-native, not speech-native: the graph now runs off soniox transcript
+    // rather than the audio pipeline's own speech handling.
+    "process-type": "stt-native",
     faces: MUTHU_FACES,
     agent_id: {
       workflow: {
@@ -127,8 +129,10 @@ You are speaking out loud, on a live call, to an officer named ${userName}. They
               },
               prompt_template: "base_llm",
               system_prompt: systemPrompt,
-              service: "groq",
-              model: "openai/gpt-oss-120b",
+              // Same provider/model as the nimc call track — and as `debrief`
+              // below, which moved with it rather than being left on groq.
+              service: "openrouter",
+              model: "google/gemini-3.1-flash-lite-preview",
               history_key: "conversation_history",
               llm_return_type: {
                 speak: {
@@ -230,8 +234,8 @@ You are speaking out loud, on a live call, to an officer named ${userName}. They
               },
               prompt_template: "base_llm",
               system_prompt: MUTHU_DEBRIEF_PROMPT,
-              service: "groq",
-              model: "openai/gpt-oss-120b",
+              service: "openrouter",
+              model: "google/gemini-3.1-flash-lite-preview",
               history_key: "debrief_conversation_history",
               llm_return_type: {
                 // `str`, not a numeric type, and parsed on our side. The wire
@@ -303,9 +307,14 @@ You are speaking out loud, on a live call, to an officer named ${userName}. They
     // pauses to think. He gets an impatient one instead.
     ...buildVoiceCustoms({
       ttsModel: "aura-2-odysseus-en",
+      // Off — sends `"pre-fire": false` and an empty pre-fire-config.
+      preFire: false,
       inactivityMessage:
         "Hello? You are still there or not? I'm sitting here waiting, you know!",
     }),
+    // Below the spread on purpose — it replaces the deepgram stt_id that
+    // buildVoiceCustoms sets. Soniox, English only; see STT_SONIOX_EN.
+    stt_id: STT_SONIOX_EN,
     // No vision_id. Nothing here is scored off the officer's camera, and the
     // avatar's face is driven by `frame` from the language model, not by any
     // frame analyser — the name collision between the two is unfortunate and

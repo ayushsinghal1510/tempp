@@ -50,6 +50,19 @@ enum PracticeCompanyStatus {
   published
 }
 
+// The educator's own judgement of whether a student is ready to sit a real
+// interview. Deliberately NOT derived from scores: the rubric measures how one
+// session went, and "ready" is a call about a person that an educator makes
+// after watching several of them plus everything the product never sees.
+//
+// `not_ready` is the default for the same reason — readiness is something an
+// educator confers, so nobody is ready until somebody says so. It is not a
+// judgement about a new student, and no UI should read it as one.
+enum StudentReadiness {
+  not_ready
+  ready
+}
+
 // Which product a practice account is using. Decided by email domain at
 // signup (see src/lib/tenants/config.ts) and then read from the row, never
 // recomputed — so accounts that predate the domain rule keep working.
@@ -225,6 +238,10 @@ model User {
   // created before this field existed.
   course        Degree?
   cgpa          Float?
+  // Educator-set, role = practice only. Every other role carries the default
+  // and never reads it. See StudentReadiness for why this is a person's call
+  // and not a computed one.
+  readiness     StudentReadiness @default(not_ready)
 
   createdAt DateTime @default(now()) @map("created_at")
 

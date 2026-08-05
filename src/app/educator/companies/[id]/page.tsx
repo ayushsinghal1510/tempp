@@ -22,8 +22,13 @@ import {
   orgFunnelRows,
   orgStudentRounds,
 } from "@/lib/practice/educatorQueries";
-import { assignmentFunnel } from "@/lib/practice/educatorMetrics";
+import {
+  assignmentFunnel,
+  sessionListRows,
+} from "@/lib/practice/educatorMetrics";
 import { tenantConfig } from "@/lib/tenants/config";
+import SessionsList from "@/components/educator/SessionsList";
+import ReadinessToggle from "@/components/educator/ReadinessToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +86,15 @@ export default async function EducatorCompanyPage({
       s.rounds.filter((r) => r.status === "completed").length,
     ]),
   );
+
+  // `students` is already scoped to this company by orgStudentRounds' second
+  // argument, so every round hanging off these rows is one run here. Sorted by
+  // volume rather than by name: the person the educator wants is the one with
+  // six sessions or the one with one, and both ends are reachable from a
+  // sorted list where an alphabetical one hides them in the middle.
+  const studentsWithSessions = students
+    .filter((s) => s.rounds.length > 0)
+    .sort((a, b) => b.rounds.length - a.rounds.length || a.name.localeCompare(b.name));
 
   const profile = tierProfile(company.tier);
   const research = company.companyResearch as CompanyResearch | null;
@@ -185,7 +199,7 @@ export default async function EducatorCompanyPage({
           </div>
         </section>
 
-        {tenant.features.assignments ? (
+        {tenant.features.assignments && (
         <AssignPanel
           companyId={company.id}
           groups={groups.map((g) => ({
@@ -211,7 +225,62 @@ export default async function EducatorCompanyPage({
             };
           })}
         />
-        ) : (
+        )}
+
+        {/* Below the brief and the assignment panel deliberately: those answer
+            "what is this and who has it", and this answers "what came back".
+            Students with no sessions on this company are dropped rather than
+            listed empty — the funnel above already counts who hasn't started,
+            and repeating them here as a column of blanks buries the students
+            who did. */}
+        <section className="card p-6">
+          <h3 className="font-semibold text-ink">Sessions by student</h3>
+          <p className="mt-0.5 text-sm text-muted">
+            Every session run on {company.companyName}, grouped by who ran it.
+            Open one to read the transcript and watch the replay.
+          </p>
+          {studentsWithSessions.length === 0 ? (
+            <p className="mt-4 text-sm text-muted">
+              Nobody has run a session on this{" "}
+              {tenant.copy.unitSingular} yet.
+            </p>
+          ) : (
+            <div className="mt-5 space-y-6">
+              {studentsWithSessions.map((s) => (
+                <div key={s.userId}>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <Link
+                        href={`/educator/students/${s.userId}`}
+                        className="font-medium text-ink hover:text-brand hover:underline"
+                      >
+                        {s.name}
+                      </Link>
+                      <span className="ml-2 text-xs text-muted">
+                        {s.rounds.length} session
+                        {s.rounds.length === 1 ? "" : "s"} here
+                      </span>
+                    </div>
+                    <ReadinessToggle
+                      userId={s.userId}
+                      readiness={s.readiness}
+                    />
+                  </div>
+                  {/* Neither identity column: the heading is the student and
+                      the page is the company, so both would be a constant
+                      repeated down the table. */}
+                  <SessionsList
+                    rows={sessionListRows([s], tenant.topics)}
+                    showStudent={false}
+                    showCompany={false}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {!tenant.features.assignments && (
           <section className="card p-6">
             <h3 className="font-semibold text-ink">Who gets this</h3>
             <p className="mt-1 text-sm text-muted">

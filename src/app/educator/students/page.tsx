@@ -8,6 +8,8 @@ import { stuckTopics } from "@/lib/practice/educatorMetrics";
 import { aggregate, topicLabel } from "@/lib/practice/metrics";
 import { tenantConfig } from "@/lib/tenants/config";
 import { qualitativeTrend } from "@/lib/practice/summarize";
+import ClickableRow from "@/components/ui/ClickableRow";
+import ReadinessToggle from "@/components/educator/ReadinessToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +55,7 @@ export default async function EducatorStudentsPage() {
               <thead className="bg-canvas text-xs uppercase tracking-wide text-faint">
                 <tr>
                   <th className="px-4 py-2.5">Student</th>
+                  <th className="px-4 py-2.5">Readiness</th>
                   <th className="px-4 py-2.5">Sessions</th>
                   {scoring && (
                     <>
@@ -68,10 +71,20 @@ export default async function EducatorStudentsPage() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.userId} className="border-t border-line">
+                  <ClickableRow
+                    key={r.userId}
+                    href={`/educator/students/${r.userId}`}
+                    className="border-t border-line"
+                  >
                     <td className="px-4 py-2.5">
                       <div className="font-medium text-ink">{r.name}</div>
                       <div className="text-xs text-muted">{r.email}</div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <ReadinessToggle
+                        userId={r.userId}
+                        readiness={r.readiness}
+                      />
                     </td>
                     <td className="px-4 py-2.5 tabular-nums">
                       {r.stats.totalSessions}
@@ -111,7 +124,7 @@ export default async function EducatorStudentsPage() {
                         View →
                       </Link>
                     </td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
             </table>

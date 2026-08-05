@@ -100,6 +100,21 @@ export default function RoundResultsRecording({
         </p>
       )}
 
+      {/* "none" used to render nothing at all — no player, no banner, no
+          explanation — so a student whose recording never arrived saw an
+          empty gap above the chart and no way to tell whether the video was
+          missing, still coming, or something they'd done wrong. Say it. */}
+      {state === "none" && (
+        <p className="rounded-lg border border-line bg-canvas px-4 py-3 text-sm text-muted">
+          There&apos;s no replay for this session — the recording either
+          didn&apos;t start (some browsers, Safari in particular, can&apos;t
+          record one) or the tab was closed before it finished uploading.{" "}
+          {showTimeline
+            ? "Your scores and coaching moments below are unaffected."
+            : "Your transcript below is unaffected."}
+        </p>
+      )}
+
       {hasRecording && (
         <video
           ref={videoRef}

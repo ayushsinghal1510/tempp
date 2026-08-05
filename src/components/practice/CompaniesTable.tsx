@@ -8,6 +8,7 @@ import type { TenantConfig } from "@/lib/tenants/config";
 import type { Tier } from "@/lib/research/tierProfiles";
 import type { DeadlineStatus } from "@/lib/practice/deadline";
 import Select from "@/components/ui/Select";
+import ClickableRow from "@/components/ui/ClickableRow";
 
 // Only the states worth interrupting the student about. "upcoming" is covered
 // by the plain due date already on the row, and "none" has nothing to say.
@@ -133,7 +134,11 @@ export default function CompaniesTable({
             </thead>
             <tbody>
               {filtered.map((c) => (
-                <tr key={c.id} className="border-t border-line">
+                <ClickableRow
+                  key={c.id}
+                  href={`/practice/companies/${c.id}`}
+                  className="border-t border-line"
+                >
                   <td className="px-4 py-2.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-ink">
@@ -213,7 +218,7 @@ export default function CompaniesTable({
                       View →
                     </Link>
                   </td>
-                </tr>
+                </ClickableRow>
               ))}
             </tbody>
           </table>

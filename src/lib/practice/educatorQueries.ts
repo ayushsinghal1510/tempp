@@ -22,7 +22,9 @@ export async function orgStudentRounds(
     select: {
       userId: true,
       companyId: true,
-      user: { select: { id: true, name: true, email: true } },
+      user: {
+        select: { id: true, name: true, email: true, readiness: true },
+      },
     },
   });
 
@@ -33,7 +35,13 @@ export async function orgStudentRounds(
       company: { orgId, ...(companyId ? { id: companyId } : {}) },
       userId: { in: assignments.map((a) => a.userId) },
     },
-    include: { turns: { select: { topics: true } } },
+    include: {
+      turns: { select: { topics: true } },
+      // Two fields, not the whole row: every educator list that renders a
+      // session names the company beside it, and the alternative is one
+      // lookup per round at the render site.
+      company: { select: { id: true, companyName: true } },
+    },
     orderBy: { createdAt: "asc" },
     relationLoadStrategy: "join",
   });
@@ -45,6 +53,7 @@ export async function orgStudentRounds(
         userId: a.user.id,
         name: a.user.name,
         email: a.user.email,
+        readiness: a.user.readiness,
         rounds: [],
       });
     }
@@ -71,7 +80,11 @@ export async function groupStudentRounds(
 ): Promise<StudentRounds[]> {
   const members = await prisma.practiceMember.findMany({
     where: { groupId, group: { orgId } },
-    select: { user: { select: { id: true, name: true, email: true } } },
+    select: {
+      user: {
+        select: { id: true, name: true, email: true, readiness: true },
+      },
+    },
     orderBy: { joinedAt: "asc" },
   });
 
@@ -80,7 +93,10 @@ export async function groupStudentRounds(
   const userIds = members.map((m) => m.user.id);
   const rounds = await prisma.practiceRound.findMany({
     where: { company: { orgId }, userId: { in: userIds } },
-    include: { turns: { select: { topics: true } } },
+    include: {
+      turns: { select: { topics: true } },
+      company: { select: { id: true, companyName: true } },
+    },
     orderBy: { createdAt: "asc" },
     relationLoadStrategy: "join",
   });
@@ -88,7 +104,13 @@ export async function groupStudentRounds(
   const byUser = new Map<string, StudentRounds>(
     members.map((m) => [
       m.user.id,
-      { userId: m.user.id, name: m.user.name, email: m.user.email, rounds: [] },
+      {
+        userId: m.user.id,
+        name: m.user.name,
+        email: m.user.email,
+        readiness: m.user.readiness,
+        rounds: [],
+      },
     ]),
   );
   for (const r of rounds) byUser.get(r.userId)?.rounds.push(r);

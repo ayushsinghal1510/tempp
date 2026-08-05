@@ -5,6 +5,7 @@ import Link from "next/link";
 import { topicLabel } from "@/lib/practice/metrics";
 import type { TopicMeta } from "@/lib/practice/topics";
 import Select from "@/components/ui/Select";
+import ClickableRow from "@/components/ui/ClickableRow";
 
 export type SessionRow = {
   id: string;
@@ -152,7 +153,11 @@ export default function SessionsTable({
             </thead>
             <tbody>
               {filtered.map((s) => (
-                <tr key={s.id} className="border-t border-line">
+                <ClickableRow
+                  key={s.id}
+                  href={`/practice/rounds/${s.id}`}
+                  className="border-t border-line"
+                >
                   <td className="px-4 py-2.5">
                     <Link
                       href={`/practice/rounds/${s.id}`}
@@ -191,7 +196,7 @@ export default function SessionsTable({
                       </td>
                     </>
                   )}
-                </tr>
+                </ClickableRow>
               ))}
             </tbody>
           </table>

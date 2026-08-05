@@ -2,6 +2,7 @@ import Link from "next/link";
 import { topicLabel } from "@/lib/practice/metrics";
 import type { TriageRow } from "@/lib/practice/educatorMetrics";
 import type { TopicMeta } from "@/lib/practice/topics";
+import ClickableRow from "@/components/ui/ClickableRow";
 
 export default function TriageTable({
   rows,
@@ -33,7 +34,11 @@ export default function TriageTable({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.userId} className="border-t border-line">
+            <ClickableRow
+              key={r.userId}
+              href={`/educator/students/${r.userId}`}
+              className="border-t border-line"
+            >
               <td className="px-4 py-2.5">
                 <div className="font-medium text-ink">{r.name}</div>
                 <div className="text-xs text-muted">{r.email}</div>
@@ -65,7 +70,7 @@ export default function TriageTable({
                   View →
                 </Link>
               </td>
-            </tr>
+            </ClickableRow>
           ))}
         </tbody>
       </table>
