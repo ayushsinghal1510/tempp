@@ -145,7 +145,15 @@
       "Bash(npx --yes esbuild@0.24.0 src/lib/voice/practiceCustoms.ts --jsx=automatic --outfile=/dev/null)",
       "Bash(npx --yes esbuild@0.24.0 /tmp/claude-1000/-teamspace-studios-this-studio-tempp/a1daa631-3706-4275-8e38-2e255a58167b/scratchpad/drv3.ts --bundle --platform=node --format=cjs --alias:@=./src --outfile=/tmp/claude-1000/-teamspace-studios-this-studio-tempp/a1daa631-3706-4275-8e38-2e255a58167b/scratchpad/drv3.js)",
       "Bash(npx --yes esbuild@0.24.0 /tmp/claude-1000/-teamspace-studios-this-studio-tempp/a1daa631-3706-4275-8e38-2e255a58167b/scratchpad/drv4.ts --bundle --platform=node --format=cjs --alias:@=./src --outfile=/tmp/claude-1000/-teamspace-studios-this-studio-tempp/a1daa631-3706-4275-8e38-2e255a58167b/scratchpad/drv4.js)",
-      "Bash(npx --yes esbuild@0.24.0 src/components/interview/InterviewRoom.tsx --jsx=automatic --outfile=/dev/null)"
+      "Bash(npx --yes esbuild@0.24.0 src/components/interview/InterviewRoom.tsx --jsx=automatic --outfile=/dev/null)",
+      "Bash(echo \"=== exit: $? ===\")",
+      "Bash(sort -u -t: -k3)",
+      "Bash(echo \"=== tsc exit: $? ===\")",
+      "Bash(git checkout *)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "PowerShell(Stop-Process *)",
+      "Bash(sed 's/className=//')",
+      "Bash(export SHOT_DIR=\"C:/Users/Lenovo/AppData/Local/Temp/claude/D--vx-tempp/c463934f-0b27-4d83-8a0c-2300f0ceb32d/scratchpad\")"
     ]
   }
 }
