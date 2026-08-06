@@ -59,7 +59,11 @@ export default function Dialler() {
             setError(null);
           }}
           placeholder="98765 43210"
-          className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+          // min-w-0 is load-bearing: an <input> carries an intrinsic width from
+          // its `size` attribute, and a flex item will not shrink below its
+          // min-content width by default. Without this the row holds a ~360px
+          // floor and pushes the whole dashboard column past the viewport.
+          className="min-w-0 flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
         />
         <button
           type="submit"

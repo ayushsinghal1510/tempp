@@ -30,8 +30,13 @@ export default async function NimcDiallerPage() {
 
   return (
     <DashboardShell user={user} nav={NIMC_NAV} title="Dialler">
+      {/* min-w-0 on both children: a grid item defaults to min-width:auto and
+          refuses to shrink below its min-content, so on a phone the wider of
+          the two sets a floor for the shared column and pushes the dashboard
+          past the viewport — where the shell's rounded-corner clip hides it
+          with no way to scroll it back. */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
-        <div>
+        <div className="min-w-0">
           <Dialler />
           <p className="mt-3 text-xs text-muted">
             The call connects to the number you enter. Sneha introduces
@@ -39,7 +44,7 @@ export default async function NimcDiallerPage() {
           </p>
         </div>
 
-        <section>
+        <section className="min-w-0">
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold text-ink">Recent calls</h2>
             <Link href="/nimc/calls" className="text-xs text-brand hover:underline">

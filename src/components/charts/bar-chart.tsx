@@ -209,8 +209,14 @@ const ChartCore = memo(function ChartCore({
   // Extract bar configs synchronously from children
   const lines = useMemo(() => extractBarConfigs(children), [children]);
 
-  const innerWidth = width - margin.left - margin.right;
-  const innerHeight = height - margin.top - margin.bottom;
+  // Clamped at 0. A chart that mounts before its container has been measured —
+  // or inside one that is briefly collapsed, which is what the interview room
+  // does while it settles — reports a width smaller than its own margins. The
+  // negative that falls out propagates into every <rect width> and <clipPath>
+  // downstream, and SVG rejects those attributes outright ("A negative value is
+  // not valid"), so the console fills with errors and the geometry is wrong.
+  const innerWidth = Math.max(0, width - margin.left - margin.right);
+  const innerHeight = Math.max(0, height - margin.top - margin.bottom);
 
   // Category accessor function - returns string for categorical scale
   const categoryAccessor = useCallback(

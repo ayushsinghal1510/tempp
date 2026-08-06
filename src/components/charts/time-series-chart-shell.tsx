@@ -208,8 +208,10 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
   onPhaseChange,
 }: TimeSeriesChartInnerProps) {
   const staticPreview = useStaticChartPreview();
-  const innerWidth = width - margin.left - margin.right;
-  const innerHeight = height - margin.top - margin.bottom;
+  // Clamped at 0 — see the note in bar-chart.tsx. A container narrower than its
+  // own margins yields a negative inner box, which SVG refuses to render.
+  const innerWidth = Math.max(0, width - margin.left - margin.right);
+  const innerHeight = Math.max(0, height - margin.top - margin.bottom);
 
   const resolveYDomain = useCallback(
     (sourceData: Record<string, unknown>[], dataKeys: string[]) => {
