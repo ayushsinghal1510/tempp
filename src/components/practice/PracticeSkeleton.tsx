@@ -23,14 +23,16 @@ export default function PracticeSkeleton({
           <span className="h-9 w-9 rounded-xl bg-brand/30" />
           <Pulse className="h-5 w-28" />
         </div>
+        {/* Three, matching the rail's Home / Companies / Interviews. */}
         <div className="space-y-2 px-3 pt-4">
-          <Pulse className="h-10 w-full" />
           <Pulse className="h-10 w-full" />
           <Pulse className="h-10 w-full" />
           <Pulse className="h-10 w-full" />
         </div>
       </aside>
-      <header className="sticky top-0 z-20 border-b border-line bg-card lg:ml-64">
+      {/* No lg:ml-64 — the parent <main class="practice-page"> already pads
+          16rem at lg to clear the fixed rail. See PracticeHeader. */}
+      <header className="sticky top-0 z-20 border-b border-line bg-card">
         <div className="flex h-16 items-center justify-between px-5 sm:px-6">
           {/* The product name and the nav nouns are the tenant's, and this
               renders before any tenant lookup could resolve — so it shows the
