@@ -104,7 +104,7 @@
 // and never coached, and the blocklist makes "dropped" a fact the model is
 // handed rather than something it has to re-derive from a long history.
 
-import { buildVoiceCustoms, STT_SONIOX_EN, TTS_SARVAM } from "./voiceCustoms";
+import { buildVoiceCustoms, STT_SONIOX_EN } from "./voiceCustoms";
 import {
   VX_SERVER,
   FLOW_API_KEY,
@@ -147,14 +147,21 @@ export type TopicKey = (typeof TOPIC_KEYS)[number];
 /**
  * The two interviewers a student can pick between on the preflight screen.
  *
- * `speaker` is a Sarvam voice id — see TTS_SARVAM in voiceCustoms.ts. "simran"
- * is the one already proven in production on the PSTN track; "shubh" is its
- * male counterpart and is the value to check first if the male option comes
- * back silent, since an unknown speaker id fails at the driver, not here.
+ * `ttsModel` is a Deepgram Aura model id — on Deepgram the voice IS the model
+ * id (`model` is the only key that client reads; see TTS_DEEPGRAM in
+ * voiceCustoms.ts), so this one field is the whole voice selection. This track
+ * was on Sarvam ("simran"/"shubh") until now; it is on Deepgram to match every
+ * other login (mm, cus, pr), where the voice has more sessions behind it.
+ *
+ * "aura-2-thalia-en" is Deepgram's default female voice and the one
+ * buildVoiceCustoms already falls back to. "aura-2-odysseus-en" is the male
+ * counterpart mm and cus run on — the value to check first if the male option
+ * ever comes back silent, since an unknown model id fails at the driver, not
+ * here.
  */
 export const INTERVIEWERS = {
-  female: { name: "Shreya", speaker: "simran" },
-  male: { name: "Aakash", speaker: "shubh" },
+  female: { name: "Shreya", ttsModel: "aura-2-thalia-en" },
+  male: { name: "Aakash", ttsModel: "aura-2-odysseus-en" },
 } as const;
 
 export type InterviewerGender = keyof typeof INTERVIEWERS;
@@ -816,15 +823,20 @@ When you've covered enough and they've improved, wrap up warm: name one or two t
     // never been on that number. buildVoiceCustoms defaults to 10 and this
     // file was passing it through untouched, so the doubling is from a base
     // of 10, not 40 — worth knowing if 80 turns out to be too eager here.
-    ...buildVoiceCustoms({ preFireCurrent: 80 }),
+    //
+    // The TTS voice rides in the same call rather than as an override below,
+    // because Deepgram is what buildVoiceCustoms already builds — it only needs
+    // the model id. The voice follows the interviewer the student picked, so
+    // the name in the prompt and the voice they hear can never disagree: both
+    // come from the same INTERVIEWERS entry.
+    ...buildVoiceCustoms({
+      preFireCurrent: 80,
+      ttsModel: interviewer.ttsModel,
+    }),
     // Soniox, English only. Below the spread on purpose — it replaces the
-    // deepgram stt_id buildVoiceCustoms sets.
+    // deepgram stt_id buildVoiceCustoms sets. Only the STT is replaced now;
+    // the tts_id from the spread is the one that ships.
     stt_id: STT_SONIOX_EN,
-    // Sarvam, likewise replacing the deepgram tts_id from the spread. The
-    // voice follows the interviewer the student picked, so the name in the
-    // prompt and the voice they hear can never disagree — they come from the
-    // same INTERVIEWERS entry.
-    tts_id: TTS_SARVAM.buildId({ speaker: interviewer.speaker }),
     // The frame analyser — ON. It samples the student's camera at 1 fps and its
     // report is concatenated into `user_input` inside a
     // <turn-visual-context>...</turn-visual-context> tag, which the webhook

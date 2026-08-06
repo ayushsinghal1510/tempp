@@ -341,9 +341,10 @@ export default function InterviewRoom({
   // PTT choice above — it is a per-session preference, not a fact about the
   // student, so nothing is persisted and there is no schema for it.
   //
-  // Female is the default because "simran" is the Sarvam speaker already
-  // proven in production (nimcCustoms.ts); "shubh" is its untested male
-  // counterpart. With the picker disabled this never moves off "female".
+  // Female is the default: it is the Deepgram voice "aura-2-thalia-en", which
+  // is what buildVoiceCustoms falls back to anyway; the male counterpart is
+  // "aura-2-odysseus-en". With the picker disabled this never moves off
+  // "female".
   // Mirrored for the same reason usePttRef exists: the WebRTC bootstrap effect
   // below reads this while building customs and must not re-run when it moves.
   const interviewerRef = useRef<InterviewerGender>("female");
@@ -1380,9 +1381,10 @@ export default function InterviewRoom({
               taking a turn, and either is a normal choice. Free-flowing stays
               the default so nothing changes for anyone who doesn't want it. */}
           {/* INTERVIEWER PICKER — DISABLED. Every student gets the female
-              interviewer (Shreya, Sarvam voice "simran"), which is the default
-              `buildPracticeCustoms` already falls back to, so removing the UI
-              alone is enough to force it — no other change is needed.
+              interviewer (Shreya, Deepgram voice "aura-2-thalia-en"), which is
+              the default `buildPracticeCustoms` already falls back to, so
+              removing the UI alone is enough to force it — no other change is
+              needed.
 
               To re-enable: uncomment the block below and restore the
               `interviewer`/`setInterviewer` useState by the PTT state near the
@@ -1390,10 +1392,11 @@ export default function InterviewRoom({
               is what the WebRTC bootstrap reads, and with no UI to move it it
               simply stays on "female".
 
-              The male option (Aakash, voice "shubh") is still wired end to end
-              in practiceCustoms.ts and works if passed — "shubh" is the one
-              value in this flow never exercised in production, so it wants a
-              live check before it goes back in front of students. */}
+              The male option (Aakash, voice "aura-2-odysseus-en") is still
+              wired end to end in practiceCustoms.ts and works if passed — it is
+              the voice mm and cus already run on, so it is no longer the
+              untested half of this pair, but it still wants a live check on
+              this track before it goes back in front of students. */}
           {/*
           {variant === "practice" && !roleplay && !workflow && !scenario && (
             <fieldset className="mt-6 rounded-xl border border-line bg-card p-4">

@@ -33,7 +33,11 @@ const TTS_DEEPGRAM = {
 };
 
 /**
- * Sarvam TTS — Indian-English voices, used by the interview track.
+ * Sarvam TTS — Indian-English voices. Currently UNUSED by the WebRTC tracks:
+ * the interview track (practiceCustoms.ts) ran on it until it moved to Deepgram
+ * to match the other logins, and the PSTN track (nimcCustoms.ts) inlines its
+ * own copy of this shape rather than importing. Kept because the key shape
+ * below is hard-won and this is where it is written down.
  *
  * The key shape is NOT a guess: nimcCustoms.ts has been sending
  * `{ service: "sarvam", speaker: "simran" }` on the PSTN track, so `speaker`
