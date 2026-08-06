@@ -8,8 +8,19 @@ import s from "./Nav.module.css";
  * Sections that render on a dark ground tag themselves with
  * data-nav-dark; when one of them is under the bar, the bar flips
  * to light type so the nav is legible either way.
+ *
+ * `dashboardHref` is set when the visitor already has a session, which turns
+ * the Login CTA into a way back into their dashboard. Null means logged out.
  */
-export default function Nav() {
+export default function Nav({
+  dashboardHref = null,
+}: {
+  dashboardHref?: string | null;
+}) {
+  const cta = dashboardHref
+    ? { href: dashboardHref, label: "Dashboard" }
+    : { href: "/practice/login", label: "Login" };
+
   const [open, setOpen] = useState(false);
   const [dark, setDark] = useState(false);
   const [current, setCurrent] = useState<string | null>(null);
@@ -77,8 +88,8 @@ export default function Nav() {
           ))}
         </div>
 
-        <a href="/practice/login" className={`${s.login} ${s.glass} ${s.actions}`}>
-          Login
+        <a href={cta.href} className={`${s.login} ${s.glass} ${s.actions}`}>
+          {cta.label}
         </a>
 
         <button
@@ -106,11 +117,11 @@ export default function Nav() {
           </div>
           <div className={s.panelActions}>
             <a
-              href="/practice/login"
+              href={cta.href}
               className={`btn btn-solid ${s.btnFull}`}
               onClick={() => setOpen(false)}
             >
-              Login
+              {cta.label}
             </a>
           </div>
         </div>

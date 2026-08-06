@@ -72,7 +72,7 @@ export default function Audiences() {
             </div>
 
             <div className={s.ctaRow}>
-              <a href="#educators" className="btn btn-ghost">
+              <a href="/educator/login" className="btn btn-ghost">
                 See the educator dashboard
               </a>
             </div>
