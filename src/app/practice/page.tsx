@@ -81,21 +81,29 @@ export default async function PracticeHomePage() {
     .map((item, i) => ({ ...item, highlight: i === 0 }));
 
   return (
-    <main className="min-h-screen bg-canvas text-ink">
+    <main className="practice-page min-h-screen bg-canvas text-ink">
       <PracticeHeader userName={user.name} tenant={user.tenant} />
 
-      <div className="mx-auto w-full max-w-[1800px] space-y-8 px-6 py-10">
+      <div className="mx-auto w-full max-w-[1800px] space-y-8 px-5 py-8 sm:px-6 sm:py-10">
         {/* ── The action, first ────────────────────────────────────────── */}
         <section className="space-y-4">
-          <div className="flex items-baseline justify-between gap-4">
-            <h1 className="text-xl font-bold text-ink">
-              Hi {user.name.split(" ")[0]} — up next
-            </h1>
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brass">
+                Your practice desk
+              </p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+                Hi {user.name.split(" ")[0]}, ready when you are.
+              </h1>
+              <p className="mt-1 text-sm text-muted">
+                Pick up the thread, practise deliberately, and make the next round count.
+              </p>
+            </div>
             <Link
               href="/practice/companies"
-              className="shrink-0 text-sm font-medium text-muted transition hover:text-ink"
+              className="mb-1 shrink-0 rounded-xl border border-line bg-card px-3 py-2 text-sm font-semibold text-ink transition hover:border-line-strong hover:bg-brand-soft"
             >
-              All {copy.unitPlural} →
+              View all {copy.unitPlural} →
             </Link>
           </div>
 
@@ -113,10 +121,15 @@ export default async function PracticeHomePage() {
         </section>
 
         {/* ── The numbers, second ──────────────────────────────────────── */}
-        <div className="card p-5 text-sm font-medium text-ink">
-          {features.scoring
-            ? summarizeStats(overall, topics)
-            : `You've run ${overall.totalSessions} ${overall.totalSessions === 1 ? copy.sessionNoun : copy.sessionNoun + "s"}. Open any one to play the recording back and read the transcript.`}
+        <div className="overflow-hidden rounded-[18px] bg-brand px-5 py-5 text-sm text-primary-foreground shadow-sm sm:px-6">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--brass-lit)]">
+            Progress note
+          </p>
+          <p className="mt-2 max-w-4xl text-base font-medium leading-relaxed">
+            {features.scoring
+              ? summarizeStats(overall, topics)
+              : `You've run ${overall.totalSessions} ${overall.totalSessions === 1 ? copy.sessionNoun : copy.sessionNoun + "s"}. Open any one to play the recording back and read the transcript.`}
+          </p>
         </div>
 
         {/* A lone KPI in a four-column grid reads as three broken cards, so

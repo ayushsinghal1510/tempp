@@ -21,7 +21,7 @@ export default async function ResumeChatPage({
   const chat = await getResumeChat(user.id, id);
 
   return (
-    <main className="min-h-screen bg-canvas text-ink">
+    <main className="practice-page min-h-screen bg-canvas text-ink">
       <PracticeHeader userName={user.name} tenant={user.tenant} />
 
       <div className="mx-auto w-full max-w-[1400px] space-y-6 px-6 py-10">

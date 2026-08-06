@@ -7,7 +7,7 @@ import { createCompany, type CompanyResult } from "@/lib/actions/practice";
 const initial: CompanyResult = { error: "" };
 
 const field =
-  "mt-1 w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
+  "mt-1 w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20";
 
 export default function CompanyForm() {
   const router = useRouter();
@@ -24,7 +24,7 @@ export default function CompanyForm() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-full rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-brand-strong"
+        className="w-full rounded-xl bg-brand px-5 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-brand-strong"
       >
         Add a company →
       </button>

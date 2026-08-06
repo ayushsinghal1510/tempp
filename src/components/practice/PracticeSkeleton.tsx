@@ -17,9 +17,21 @@ export default function PracticeSkeleton({
   message?: string;
 }) {
   return (
-    <main className="min-h-screen bg-canvas text-ink">
-      <header className="border-b border-line bg-card">
-        <div className="flex items-center justify-between px-6 py-3">
+    <main className="practice-page min-h-screen bg-canvas text-ink">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-card lg:flex">
+        <div className="flex items-center gap-3 px-5 py-5">
+          <span className="h-9 w-9 rounded-xl bg-brand/30" />
+          <Pulse className="h-5 w-28" />
+        </div>
+        <div className="space-y-2 px-3 pt-4">
+          <Pulse className="h-10 w-full" />
+          <Pulse className="h-10 w-full" />
+          <Pulse className="h-10 w-full" />
+          <Pulse className="h-10 w-full" />
+        </div>
+      </aside>
+      <header className="sticky top-0 z-20 border-b border-line bg-card lg:ml-64">
+        <div className="flex h-16 items-center justify-between px-5 sm:px-6">
           {/* The product name and the nav nouns are the tenant's, and this
               renders before any tenant lookup could resolve — so it shows the
               SHAPE of the header rather than a label that would be wrong for
@@ -33,14 +45,14 @@ export default function PracticeSkeleton({
             <LogoutButton redirectTo="/practice/login" />
           </div>
         </div>
-        <div className="flex gap-4 px-6 pb-3">
+        <div className="flex gap-4 border-t border-line px-6 pb-3 pt-2 lg:hidden">
           <Pulse className="h-4 w-14" />
           <Pulse className="h-4 w-20" />
           <Pulse className="h-4 w-16" />
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[1800px] space-y-6 px-6 py-10">
+      <div className="mx-auto w-full max-w-[1800px] space-y-6 px-5 py-8 sm:px-6 sm:py-10">
         {message && (
           <div className="flex items-center gap-2 text-sm font-medium text-muted">
             <span className="h-2 w-2 animate-pulse rounded-full bg-brand" />

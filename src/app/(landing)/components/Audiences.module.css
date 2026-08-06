@@ -1,0 +1,109 @@
+/* No outer card. The section header sits on the page, then the two
+   readings run side by side, and the only boxed things are the rows
+   themselves — one level, never a card inside a card. */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(1.75rem, 4vw, 4rem);
+  margin-top: clamp(1.5rem, 2.8vw, 2.25rem);
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+}
+
+.title {
+  margin-top: 0.75rem;
+}
+
+.body {
+  margin-top: 0.5rem;
+  font-size: var(--t-small);
+  line-height: 1.6;
+  color: var(--slate);
+}
+
+.body strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.listLabel {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mist);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.6875rem 0.875rem;
+  font-size: var(--t-small);
+  font-weight: 500;
+}
+
+.row span:last-child {
+  margin-left: auto;
+}
+
+.rowMuted {
+  opacity: 0.62;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.375rem;
+}
+
+.stat {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.8125rem 0.875rem;
+}
+
+.statLabel {
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mist);
+}
+
+.statValue {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 0.125rem;
+}
+
+/* The columns are equal height, so auto margin on this wrapper
+   lands both buttons on the same line. The spacing lives on the
+   wrapper, never on the button — padding there would push the
+   label off centre. */
+.ctaRow {
+  margin-top: auto;
+  padding-top: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+}

@@ -54,12 +54,12 @@ export default function UpNextCards({ cards }: { cards: UpNextCard[] }) {
         return (
           <article
             key={card.companyId}
-            className="card relative overflow-hidden p-5 transition hover:shadow-md"
+            className="card relative overflow-hidden p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
           >
             {/* Identity stripe. Decorative, so hidden from assistive tech. */}
             <span
               aria-hidden
-              className="absolute inset-x-0 top-0 h-1"
+              className="absolute inset-x-0 top-0 h-1.5"
               style={{ background: accent }}
             />
 
@@ -87,7 +87,7 @@ export default function UpNextCards({ cards }: { cards: UpNextCard[] }) {
               )}
             </div>
 
-            <p className="mt-3 text-xs text-muted">
+            <p className="mt-4 text-xs text-muted">
               {card.sessionsRun === 0
                 ? "Not started yet"
                 : `${card.sessionsRun} completed`}
@@ -103,7 +103,7 @@ export default function UpNextCards({ cards }: { cards: UpNextCard[] }) {
                 // there means the button never lies about what it does.
                 <Link
                   href={`/practice/companies/${card.companyId}/resume-chat`}
-                  className="inline-flex w-full items-center justify-center rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-[var(--brand-soft)]"
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-line px-3 py-2.5 text-sm font-semibold text-ink transition hover:bg-[var(--brand-soft)]"
                 >
                   {card.cta}
                 </Link>
@@ -111,7 +111,7 @@ export default function UpNextCards({ cards }: { cards: UpNextCard[] }) {
                 <form action={createSession.bind(null, card.companyId)}>
                   <button
                     type="submit"
-                    className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+                    className="w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
                     style={{ background: accent }}
                   >
                     {card.cta}

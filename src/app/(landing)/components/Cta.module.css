@@ -1,0 +1,56 @@
+.panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-xl);
+  background: var(--pine-deep);
+  color: var(--haze);
+  padding: clamp(2.5rem, 4.5vw, 3.75rem) clamp(1.25rem, 2.6vw, 2.25rem);
+  text-align: center;
+}
+
+/* Last light coming up out of the valley floor — the same warmth
+   as the photograph at the top of the page. */
+.glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    88% 120% at 50% 122%,
+    rgba(195, 174, 114, 0.28),
+    rgba(195, 174, 114, 0.06) 42%,
+    transparent 66%
+  );
+  pointer-events: none;
+}
+
+.inner {
+  position: relative;
+}
+
+.title {
+  font-size: clamp(1.85rem, 1.2rem + 2.6vw, 2.85rem);
+  max-width: 20ch;
+  margin-inline: auto;
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  justify-content: center;
+  margin-top: clamp(1.25rem, 2.2vw, 1.625rem);
+}
+
+.note {
+  margin-top: 1rem;
+  font-size: var(--t-small);
+  line-height: 1.6;
+  color: rgba(236, 233, 226, 0.5);
+  max-width: 52ch;
+  margin-inline: auto;
+}
+
+@media (max-width: 520px) {
+  .ctas :global(.btn) {
+    flex: 1 1 100%;
+  }
+}

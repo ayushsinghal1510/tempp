@@ -1,0 +1,33 @@
+/* The one thing on the card that is always moving: proof the
+   session is live speech, not a form. */
+.wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+}
+
+.bar {
+  width: 2.5px;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--brass-lit);
+  transform-origin: center;
+  animation: waveBar 1.05s ease-in-out infinite;
+}
+
+@keyframes waveBar {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    transform: scaleY(0.55);
+  }
+}

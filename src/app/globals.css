@@ -6,10 +6,10 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ─────────────────────────────────────────────────────────────────────────
-   PrepAI design system (brief §11)
-   Clean, modern B2B SaaS. Light theme, indigo accent, Inter, 8pt grid.
-   shadcn/Bklit semantic tokens are mapped onto the brand palette below so
-   shadcn components and Bklit charts render on-brand out of the box.
+   PrepAI design system
+   The product uses the valley palette as a system rather than as decoration:
+   soft stone surfaces carry the interface; pine, moss and brass only appear
+   where a person needs to take notice.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
@@ -20,93 +20,111 @@
      looked out of place. */
   color-scheme: light;
 
-  /* ── PrepAI semantic scale ── */
-  --canvas: #fafafa; /* app background (zinc-50)  */
-  --ink: #0a0a0a; /* primary text (near-black)  */
-  --muted: #71717a; /* secondary text (zinc-500) */
-  --faint: #a1a1aa; /* tertiary text (zinc-400)  */
-  --line: #e4e4e7; /* borders (zinc-200)        */
-  --line-strong: #d4d4d8; /* zinc-300           */
+  /* ── Valley palette ── */
+  --haze: #ece9e2;
+  --haze-deep: #e0dbd1;
+  --paper: #faf8f4;
+  --pine: #2b312e;
+  --pine-deep: #1b1f1c;
+  --ink: #191b15;
+  --slate: #545b64;
+  --mist: #6f7278;
+  --brass: #7a6c3c;
+  --brass-lit: #c3ae72;
+  --moss: #4c5a39;
+  --moss-lit: #9aad7c;
+  --ochre: #7d6026;
+  --ember: #8a4a35;
+  --ember-lit: #cb8f76;
 
-  --brand: #18181b; /* zinc-900 — the one accent  */
-  --brand-strong: #000000; /* hover: pure black   */
-  --brand-soft: #f4f4f5; /* zinc-100             */
+  /* ── Semantic scale ── */
+  --canvas: var(--haze);
+  --muted: var(--slate);
+  --faint: var(--mist);
+  --line: rgb(25 27 21 / 10%);
+  --line-strong: rgb(25 27 21 / 20%);
+  --line-light: rgb(250 248 244 / 14%);
+  --line-light-strong: rgb(250 248 244 / 28%);
 
-  --success: #16a34a;
-  --success-soft: #dcfce7;
-  --warning: #f59e0b;
-  --warning-soft: #fef3c7;
-  --danger: #dc2626;
-  --danger-soft: #fee2e2;
+  --brand: var(--pine);
+  --brand-strong: var(--pine-deep);
+  --brand-soft: #ece9e2;
+
+  --success: var(--moss);
+  --success-soft: rgb(76 90 57 / 12%);
+  --warning: var(--ochre);
+  --warning-soft: rgb(125 96 38 / 12%);
+  --danger: var(--ember);
+  --danger-soft: rgb(138 74 53 / 12%);
 
   /* Mispricing-scatter quadrant tints (brief §6) */
-  --q-ready: #16a34a; /* top-right: send them             */
-  --q-unlocked: #4f46e5; /* bottom-right: under-sent (hero) */
-  --q-punt: #0ea5e9; /* top-left: worth a punt           */
-  --q-support: #f59e0b; /* bottom-left: needs support       */
+  --q-ready: var(--moss);
+  --q-unlocked: var(--brass);
+  --q-punt: #65726a;
+  --q-support: var(--ochre);
 
   /* ── shadcn / Bklit semantic tokens, mapped to the brand palette ── */
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-  --card: #ffffff;
-  --card-foreground: #0a0a0a;
-  --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #18181b; /* near-black — shadcn Buttons etc. */
-  --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #0a0a0a;
-  --muted-foreground: #71717a;
-  --accent: #f4f4f5; /* zinc-100 hover */
-  --accent-foreground: #18181b;
-  --destructive: #dc2626;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #18181b;
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--paper);
+  --card-foreground: var(--ink);
+  --popover: var(--paper);
+  --popover-foreground: var(--ink);
+  --primary: var(--pine);
+  --primary-foreground: var(--paper);
+  --secondary: var(--haze-deep);
+  --secondary-foreground: var(--ink);
+  --muted-foreground: var(--slate);
+  --accent: #e7e3da;
+  --accent-foreground: var(--pine);
+  --destructive: var(--ember);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--brass);
 
   /* Categorical chart palette (Bklit/shadcn charts read these) */
-  --chart-1: #4f46e5; /* indigo */
-  --chart-2: #16a34a; /* green  */
-  --chart-3: #0ea5e9; /* sky    */
-  --chart-4: #f59e0b; /* amber  */
-  --chart-5: #8b5cf6; /* violet */
+  --chart-1: #4c5a39; /* moss */
+  --chart-2: #7a6c3c; /* brass */
+  --chart-3: #65726a; /* valley sage */
+  --chart-4: #7d6026; /* ochre */
+  --chart-5: #8a4a35; /* ember */
 
   --radius: 0.75rem;
 
-  --sidebar: #ffffff;
-  --sidebar-foreground: #0a0a0a;
-  --sidebar-primary: #18181b;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f4f4f5;
-  --sidebar-accent-foreground: #18181b;
-  --sidebar-border: #e4e4e7;
-  --sidebar-ring: #18181b;
-  --chart-background: oklch(1 0 0);
-  --chart-foreground: oklch(0.145 0.004 285);
-  --chart-foreground-muted: oklch(0.55 0.014 260);
+  --sidebar: var(--paper);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--pine);
+  --sidebar-primary-foreground: var(--paper);
+  --sidebar-accent: var(--haze-deep);
+  --sidebar-accent-foreground: var(--pine);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--brass);
+  --chart-background: var(--paper);
+  --chart-foreground: var(--ink);
+  --chart-foreground-muted: var(--mist);
   --chart-line-primary: var(--chart-1);
   --chart-line-secondary: var(--chart-2);
-  --chart-crosshair: oklch(0.4 0.1828 274.34);
-  --chart-grid: oklch(0.9 0 0);
+  --chart-crosshair: var(--brass);
+  --chart-grid: rgb(25 27 21 / 9%);
   --chart-brush-border: var(--chart-grid);
-  --chart-tooltip-background: oklch(0.21 0.006 285 / 0.8);
-  --chart-tooltip-foreground: oklch(0.985 0 0);
-  --chart-tooltip-muted: oklch(0.65 0.01 260);
-  --chart-marker-background: oklch(0.97 0.005 260);
-  --chart-marker-border: oklch(0.85 0.01 260);
-  --chart-marker-foreground: oklch(0.3 0.01 260);
-  --chart-label: oklch(0.45 0.01 260);
-  --chart-scale-01: oklch(0.98 0.003 106);
-  --chart-scale-02: oklch(0.92 0.008 106);
-  --chart-scale-03: oklch(0.82 0.015 106);
-  --chart-scale-04: oklch(0.68 0.02 106);
-  --chart-scale-05: oklch(0.55 0.025 106);
-  --chart-scale-pattern-color: oklch(0.96 0.005 106);
-  --legend: oklch(1 0 0);
-  --legend-foreground: oklch(0.141 0.005 285.823);
-  --legend-muted: oklch(0.967 0.001 286.375);
-  --legend-muted-foreground: oklch(0.552 0.016 285.938);
-  --legend-track: oklch(0.92 0.004 286.32);
+  --chart-tooltip-background: var(--pine);
+  --chart-tooltip-foreground: var(--paper);
+  --chart-tooltip-muted: var(--haze-deep);
+  --chart-marker-background: var(--paper);
+  --chart-marker-border: var(--line-strong);
+  --chart-marker-foreground: var(--ink);
+  --chart-label: var(--slate);
+  --chart-scale-01: #f4f1e9;
+  --chart-scale-02: #e8e5da;
+  --chart-scale-03: #d3d5c0;
+  --chart-scale-04: #aab18b;
+  --chart-scale-05: #717d58;
+  --chart-scale-pattern-color: #f4f1e9;
+  --legend: var(--paper);
+  --legend-foreground: var(--ink);
+  --legend-muted: var(--haze-deep);
+  --legend-muted-foreground: var(--slate);
+  --legend-track: var(--haze-deep);
 }
 
 @theme inline {
@@ -133,6 +151,14 @@
   --color-q-unlocked: var(--q-unlocked);
   --color-q-punt: var(--q-punt);
   --color-q-support: var(--q-support);
+  --color-haze: var(--haze);
+  --color-haze-deep: var(--haze-deep);
+  --color-paper: var(--paper);
+  --color-pine: var(--pine);
+  --color-brass: var(--brass);
+  --color-moss: var(--moss);
+  --color-ochre: var(--ochre);
+  --color-ember: var(--ember);
 
   /* shadcn / Bklit token surface */
   --color-background: var(--background);
@@ -195,11 +221,11 @@
   --color-chart-foreground-muted: var(--chart-foreground-muted);
   --color-chart-foreground: var(--chart-foreground);
   --color-chart-background: var(--chart-background);
-  --color-legend-track: var(----legend-track);
-  --color-legend-muted-foreground: var(----legend-muted-foreground);
-  --color-legend-muted: var(----legend-muted);
-  --color-legend-foreground: var(----legend-foreground);
-  --color-legend: var(----legend);
+  --color-legend-track: var(--legend-track);
+  --color-legend-muted-foreground: var(--legend-muted-foreground);
+  --color-legend-muted: var(--legend-muted);
+  --color-legend-foreground: var(--legend-foreground);
+  --color-legend: var(--legend);
 }
 
 body {
@@ -209,12 +235,49 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Reusable card primitive — flat, border-forward (no shadow) in both themes */
+.practice-page {
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .practice-page {
+    padding-left: 16rem;
+  }
+}
+
+/* Shared surfaces. Cards stay quiet so that the next action and score state
+   can have a visual voice of their own. */
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  box-shadow: none;
+  border-radius: 18px;
+  box-shadow: 0 1px 1px rgb(25 27 21 / 3%), 0 10px 28px rgb(25 27 21 / 3%);
+}
+
+.card:hover {
+  border-color: var(--line-strong);
+}
+
+input, textarea, select {
+  background: rgb(250 248 244 / 72%);
+  border-color: var(--line-strong);
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--brass) !important;
+  box-shadow: 0 0 0 3px rgb(122 108 60 / 14%);
+}
+
+table thead {
+  background: var(--haze-deep);
+}
+
+table tbody tr {
+  transition: background-color 150ms ease;
+}
+
+table tbody tr:hover {
+  background: rgb(224 219 209 / 42%) !important;
 }
 
 @layer base {
@@ -260,85 +323,84 @@ body {
 .dark {
   color-scheme: dark;
 
-  /* ── PrepAI semantic scale (dark) ── */
-  --canvas: #09090b; /* app background (zinc-950) */
-  --ink: #fafafa; /* primary text   */
-  --muted: #a1a1aa; /* secondary text */
-  --faint: #71717a; /* tertiary text  */
-  --line: #27272a; /* borders        */
-  --line-strong: #3f3f46;
+  /* ── Valley at dusk ── */
+  --canvas: #151916;
+  --ink: #f4f1e9;
+  --muted: #c2c3bd;
+  --faint: #999d96;
+  --line: rgb(250 248 244 / 12%);
+  --line-strong: rgb(250 248 244 / 25%);
 
-  --brand: #e4e4e7; /* near-white — the one accent, inverted on dark */
+  --brand: #f4f1e9;
   --brand-strong: #ffffff;
-  --brand-soft: #1f1f23; /* dark zinc tint */
+  --brand-soft: #29302b;
 
-  --success: #4ade80;
-  --success-soft: #052e1a;
-  --warning: #fbbf24;
-  --warning-soft: #3a2c05;
-  --danger: #f87171;
-  --danger-soft: #3a0d0d;
+  --success: var(--moss-lit);
+  --success-soft: rgb(154 173 124 / 14%);
+  --warning: var(--brass-lit);
+  --warning-soft: rgb(195 174 114 / 14%);
+  --danger: var(--ember-lit);
+  --danger-soft: rgb(203 143 118 / 14%);
 
-  --q-ready: #22c55e;
-  --q-unlocked: #818cf8;
-  --q-punt: #38bdf8;
-  --q-support: #fbbf24;
+  --q-ready: var(--moss-lit);
+  --q-unlocked: var(--brass-lit);
+  --q-punt: #aab7ad;
+  --q-support: var(--brass-lit);
 
   /* ── shadcn / Bklit tokens (dark) ── */
-  --background: #131316;
-  --foreground: #fafafa;
-  --card: #131316;
-  --card-foreground: #fafafa;
-  --popover: #131316;
-  --popover-foreground: #fafafa;
-  --primary: #e4e4e7;
-  --primary-foreground: #0a0a0a;
-  --secondary: #1f1f23;
-  --secondary-foreground: #fafafa;
-  --muted-foreground: #a1a1aa;
-  --accent: #1f1f23;
-  --accent-foreground: #fafafa;
-  --destructive: #f87171;
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #e4e4e7;
+  --background: #1b211d;
+  --foreground: var(--ink);
+  --card: #1b211d;
+  --card-foreground: var(--ink);
+  --popover: #222923;
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--pine-deep);
+  --secondary: #29302b;
+  --secondary-foreground: var(--ink);
+  --muted-foreground: var(--muted);
+  --accent: #29302b;
+  --accent-foreground: var(--ink);
+  --destructive: var(--ember-lit);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--brass-lit);
 
-  --sidebar: #131316;
-  --sidebar-foreground: #fafafa;
-  --sidebar-primary: #e4e4e7;
-  --sidebar-primary-foreground: #0a0a0a;
-  --sidebar-accent: #1f1f23;
-  --sidebar-accent-foreground: #fafafa;
-  --sidebar-border: #27272a;
-  --sidebar-ring: #e4e4e7;
+  --sidebar: #1b211d;
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--ink);
+  --sidebar-primary-foreground: var(--pine-deep);
+  --sidebar-accent: #29302b;
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--brass-lit);
 
   /* Categorical chart palette (keep brand hues in dark) */
-  --chart-1: #818cf8;
-  --chart-2: #4ade80;
-  --chart-3: #38bdf8;
-  --chart-4: #fbbf24;
-  --chart-5: #a78bfa;
+  --chart-1: var(--moss-lit);
+  --chart-2: var(--brass-lit);
+  --chart-3: #aab7ad;
+  --chart-4: #d0a763;
+  --chart-5: var(--ember-lit);
 
-  --chart-background: oklch(0.145 0 0);
-  --chart-foreground: oklch(0.75 0 0);
-  --chart-foreground-muted: oklch(0.65 0.01 260);
-  --chart-crosshair: oklch(0.6 0.14 274);
-  --chart-grid: oklch(0.3 0.01 260);
+  --chart-background: #1b211d;
+  --chart-foreground: var(--ink);
+  --chart-foreground-muted: var(--muted);
+  --chart-crosshair: var(--brass-lit);
+  --chart-grid: rgb(250 248 244 / 12%);
   --chart-brush-border: var(--chart-grid);
-  --chart-marker-background: oklch(0.25 0.01 260);
-  --chart-marker-border: oklch(0.4 0.01 260);
-  --chart-marker-foreground: oklch(0.9 0 0);
-  --chart-label: oklch(0.75 0.01 260);
-  --chart-scale-01: oklch(0.28 0.03 270);
-  --chart-scale-02: oklch(0.38 0.04 270);
-  --chart-scale-03: oklch(0.48 0.05 270);
-  --chart-scale-04: oklch(0.58 0.06 270);
-  --chart-scale-05: oklch(0.68 0.07 270);
-  --chart-scale-pattern-color: oklch(0.145 0 0);
-  --legend: oklch(0.21 0.006 285.885);
-  --legend-foreground: oklch(0.985 0 0);
-  --legend-muted: oklch(0.274 0.006 286.033);
-  --legend-muted-foreground: oklch(0.705 0.015 286.067);
-  --legend-track: oklch(0.274 0.006 286.033);
+  --chart-marker-background: #29302b;
+  --chart-marker-border: var(--line-strong);
+  --chart-marker-foreground: var(--ink);
+  --chart-label: var(--muted);
+  --chart-scale-01: #273029;
+  --chart-scale-02: #394536;
+  --chart-scale-03: #526149;
+  --chart-scale-04: #788465;
+  --chart-scale-05: #a0ab85;
+  --chart-scale-pattern-color: #1b211d;
+  --legend: #222923;
+  --legend-foreground: var(--ink);
+  --legend-muted: #29302b;
+  --legend-muted-foreground: var(--muted);
+  --legend-track: #29302b;
 }
-

@@ -1,0 +1,239 @@
+/* Exactly one screen: inset by a gutter on every side, so the last
+   thing visible before the first scroll is the photograph. */
+.hero {
+  position: relative;
+  margin-top: var(--gutter);
+  height: calc(100vh - var(--gutter) * 2);
+  height: calc(100dvh - var(--gutter) * 2);
+  min-height: 30rem;
+  /* No top corners: the wash is solid page colour along that edge,
+     so a rounded clip only shows its own anti-aliased hairline.
+     Square there, rounded where the photograph is actually visible. */
+  border-radius: 0 0 var(--r-xl) var(--r-xl);
+  overflow: hidden;
+  background: var(--haze);
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+.photo {
+  object-fit: cover;
+  /* Hold the valley mouth in view as the frame narrows. */
+  object-position: center 62%;
+  z-index: 0;
+}
+
+.washTop,
+.washBottom {
+  position: absolute;
+  inset-inline: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Solid page colour at the very top edge, ramping evenly to nothing
+   by the halfway line — the frame dissolves into the page above and
+   is untouched photograph below. */
+.washTop {
+  top: 0;
+  height: 50%;
+  background: linear-gradient(180deg, var(--haze) 0%, rgba(236, 233, 226, 0) 100%);
+}
+
+.washBottom {
+  bottom: 0;
+  height: 34%;
+  background: linear-gradient(
+    0deg,
+    rgba(21, 24, 20, 0.82) 0%,
+    rgba(21, 24, 20, 0.38) 40%,
+    rgba(21, 24, 20, 0) 100%
+  );
+}
+
+/* Centred in whatever height is left, with a top offset that keeps
+   the block clear of the floating nav. */
+.top {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  padding: clamp(4.5rem, 9vh, 6.5rem) var(--inset) 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.8125rem 0.375rem 0.5625rem;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong);
+  background: rgba(250, 248, 244, 0.6);
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--brass);
+  animation: pulseDot 1.9s ease-in-out infinite;
+  flex: none;
+}
+
+.title {
+  margin-top: clamp(1.25rem, 2.4vw, 1.75rem);
+  font-size: var(--t-display);
+  max-width: 20ch;
+}
+
+/* Deeper than body copy elsewhere on the page: this paragraph sits
+   on a photograph, not on flat paper. */
+.top .sub {
+  margin-top: clamp(1rem, 1.8vw, 1.4rem);
+  max-width: 34rem;
+  color: var(--pine);
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.625rem;
+  margin-top: clamp(1.5rem, 2.6vw, 2rem);
+}
+
+/* The four things people actually practise, set over the dark
+   valley floor — the photograph doing the work of a divider. */
+.domains {
+  position: relative;
+  z-index: 2;
+  padding: 0 var(--inset) 0.875rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem clamp(1rem, 3vw, 2.5rem);
+  font-size: var(--t-label);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: rgba(236, 233, 226, 0.82);
+  text-align: center;
+}
+
+.domains span {
+  display: inline-flex;
+  align-items: center;
+  gap: clamp(1rem, 3vw, 2.5rem);
+}
+
+.domains span::after {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 99px;
+  background: rgba(236, 233, 226, 0.4);
+}
+
+.domains span:last-child::after {
+  display: none;
+}
+
+/* Scroll cue: a hairline track with a single mark falling down it,
+   repeating. The only looping motion below the fold-line. */
+.scroll {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: clamp(1rem, 2.2vh, 1.5rem);
+  font-size: 0.625rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(236, 233, 226, 0.55);
+  transition: opacity 0.3s ease;
+}
+
+.scroll:hover {
+  color: rgba(236, 233, 226, 0.85);
+}
+
+.track {
+  position: relative;
+  width: 1px;
+  height: 2.25rem;
+  background: rgba(236, 233, 226, 0.24);
+  overflow: hidden;
+  border-radius: 99px;
+}
+
+.track::after {
+  content: "";
+  position: absolute;
+  left: -1.5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--brass-lit);
+  animation: fallDown 2.1s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+@keyframes fallDown {
+  0% {
+    top: -5px;
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    top: 2.25rem;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track::after {
+    animation: none;
+    top: 50%;
+    opacity: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+    min-height: 34rem;
+  }
+
+  .title {
+    max-width: 16ch;
+  }
+
+  .ctas :global(.btn) {
+    flex: 1 1 100%;
+  }
+
+  .domains span::after {
+    display: none;
+  }
+
+  .domains {
+    gap: 0.375rem 1rem;
+  }
+}

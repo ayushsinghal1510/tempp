@@ -1,0 +1,134 @@
+.wrap {
+  position: relative;
+  margin-top: clamp(1.5rem, 2.8vw, 2.25rem);
+}
+
+/* Full bleed: the track runs edge to edge and the frame gutter is
+   applied as scroll padding, so cards can sit under the fade. */
+/* overflow-x:auto forces overflow-y to clip, which would slice the
+   cards' drop shadows into a visible band. Pad far enough for the
+   shadow to fade out inside the box, then pull the space back. */
+.viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 1.5rem 0 3.5rem;
+  margin: -1.5rem 0 -2.5rem;
+  cursor: grab;
+}
+
+.viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.viewport.dragging {
+  cursor: grabbing;
+  scroll-behavior: auto;
+}
+
+.track {
+  display: flex;
+  gap: 1rem;
+  width: max-content;
+}
+
+.slide {
+  flex: 0 0 auto;
+  width: 22rem;
+  height: 30rem;
+}
+
+/* The photograph edges dissolve into the page rather than stopping
+   at a hard line. */
+.stage {
+  position: relative;
+}
+
+/* Bottom-inset by more than the viewport's shadow padding, because
+   that padding's negative margin collapses through .stage and would
+   otherwise push the fade down over the controls. */
+.fade {
+  position: absolute;
+  top: 0;
+  bottom: 2rem;
+  width: clamp(2rem, 5vw, 5rem);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.fadeLeft {
+  left: 0;
+  background: linear-gradient(90deg, var(--haze), rgba(236, 233, 226, 0));
+}
+
+.fadeRight {
+  right: 0;
+  background: linear-gradient(270deg, var(--haze), rgba(236, 233, 226, 0));
+}
+
+/* ---- Controls ---- */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.arrow {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong);
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  background: var(--paper);
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.arrow:hover {
+  border-color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.arrow:active {
+  transform: translateY(0);
+}
+
+.dots {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: 0.5rem;
+}
+
+.dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 99px;
+  background: rgba(25, 27, 21, 0.18);
+  transition: background-color 0.25s ease, width 0.25s ease;
+}
+
+.dot[data-on="true"] {
+  width: 1.375rem;
+  background: var(--ink);
+}
+
+.hint {
+  margin-left: auto;
+  font-size: var(--t-small);
+  color: var(--mist);
+}
+
+@media (max-width: 560px) {
+  .slide {
+    width: 17.5rem;
+    height: 26.5rem;
+  }
+
+  .hint {
+    display: none;
+  }
+}

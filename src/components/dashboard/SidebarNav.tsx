@@ -27,7 +27,7 @@ export type NavItem = { label: string; href: string; icon: keyof typeof ICONS };
 export function SidebarNav({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-col gap-1 px-3">
+    <nav className="flex flex-col gap-1.5 px-3">
       {items.map((item) => {
         const active =
           pathname === item.href ||
@@ -38,14 +38,14 @@ export function SidebarNav({ items }: { items: NavItem[] }) {
             key={item.href}
             href={item.href}
             className={[
-              "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
+              "relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition",
               active
-                ? "bg-brand-soft text-brand"
-                : "text-muted hover:bg-canvas hover:text-ink",
+                ? "bg-brand text-primary-foreground shadow-sm"
+                : "text-muted hover:bg-brand-soft hover:text-ink",
             ].join(" ")}
           >
             {active && (
-              <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r bg-brand" />
+              <span className="absolute -left-3 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r bg-brass" />
             )}
             <Icon className="h-4 w-4 shrink-0" />
             {item.label}

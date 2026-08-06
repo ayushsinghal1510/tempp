@@ -60,7 +60,7 @@ export default async function PracticeCompaniesPage() {
   });
 
   return (
-    <main className="min-h-screen bg-canvas text-ink">
+    <main className="practice-page min-h-screen bg-canvas text-ink">
       <PracticeHeader userName={user.name} tenant={user.tenant} />
 
       <div className="mx-auto w-full max-w-[1800px] space-y-6 px-6 py-10">

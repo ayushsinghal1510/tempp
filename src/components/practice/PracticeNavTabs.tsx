@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { Building2, FileText, History, LayoutDashboard } from "lucide-react";
 
 /**
  * Labels are passed in rather than hardcoded — the routes are shared across
@@ -15,6 +16,7 @@ export default function PracticeNavTabs({
   unitLabel,
   sessionLabel,
   showResumeStudio,
+  vertical = false,
 }: {
   unitLabel: string;
   sessionLabel: string;
@@ -24,6 +26,8 @@ export default function PracticeNavTabs({
    * client component and the tenant config is a server-side lookup.
    */
   showResumeStudio: boolean;
+  /** Used by the desktop application rail. */
+  vertical?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -37,23 +41,35 @@ export default function PracticeNavTabs({
   ];
 
   return (
-    <nav className="flex gap-1">
+    <nav className={cn("gap-1", vertical ? "flex flex-col" : "flex overflow-x-auto pb-1")}>
       {tabs.map((t) => {
         const active =
           t.href === "/practice"
             ? pathname === "/practice"
             : pathname.startsWith(t.href);
+        const Icon = t.href === "/practice"
+          ? LayoutDashboard
+          : t.href === "/practice/companies"
+            ? Building2
+            : t.href === "/practice/resume-studio"
+              ? FileText
+              : History;
         return (
           <Link
             key={t.href}
             href={t.href}
             className={cn(
-              "border-b-2 px-3 py-2.5 text-sm font-medium transition",
-              active
-                ? "border-[var(--chart-1)] text-ink"
-                : "border-transparent text-muted hover:text-ink",
+              vertical
+                ? "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium"
+                : "whitespace-nowrap rounded-t-xl border-b-2 px-3.5 py-2.5 text-sm font-medium",
+              active && vertical
+                ? "bg-brand text-primary-foreground"
+                : active
+                  ? "border-[var(--brass)] bg-brand-soft text-ink"
+                  : "border-transparent text-muted hover:bg-brand-soft hover:text-ink",
             )}
           >
+            {vertical && <Icon className="h-4 w-4" />}
             {t.label}
           </Link>
         );

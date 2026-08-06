@@ -89,7 +89,7 @@ export default function SessionsTable({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search sessions…"
-          className="w-full max-w-xs rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-brand sm:w-auto"
+          className="w-full max-w-xs rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-brand sm:w-auto"
         />
         {showCompanyColumn && companyOptions.length > 1 && (
           <Select
@@ -132,7 +132,7 @@ export default function SessionsTable({
             : "No sessions match your search."}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="overflow-x-auto rounded-2xl border border-line bg-card">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-canvas text-xs uppercase tracking-wide text-faint">
               <tr>

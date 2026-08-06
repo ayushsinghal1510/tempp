@@ -19,19 +19,19 @@ export function StatCard({
   trend?: { label: string; value: number }[];
 }) {
   return (
-    <div className="card p-5">
+    <div className="card group p-5 transition duration-200 hover:-translate-y-0.5">
       <div className="flex items-start justify-between gap-3">
         <div className="text-sm text-muted">{label}</div>
         {Icon && (
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand transition group-hover:bg-[var(--haze-deep)]">
             <Icon className="h-4 w-4" />
           </span>
         )}
       </div>
       <div
         className={[
-          "mt-1 text-3xl font-bold tabular-nums",
-          accent ? "text-brand" : "text-ink",
+          "mt-2 text-3xl font-bold tracking-tight tabular-nums",
+          accent ? "text-brass" : "text-ink",
         ].join(" ")}
       >
         {value}

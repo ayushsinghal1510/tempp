@@ -37,16 +37,21 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen bg-canvas text-ink">
+    <div className="flex min-h-screen bg-canvas p-3 text-ink sm:p-4">
       {/* Sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-card md:flex">
-        <div className="flex items-center gap-2 px-6 py-4 font-bold text-brand">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand text-primary-foreground">
+      <aside className="hidden w-64 shrink-0 flex-col rounded-[22px] border border-line bg-card/85 md:flex">
+        <div className="flex items-center gap-3 px-5 py-5 font-bold text-brand">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-sm text-primary-foreground shadow-sm">
             P
           </span>
-          PrepAI
+          <span>
+            PrepAI
+            <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.18em] text-faint">
+              Interview studio
+            </span>
+          </span>
         </div>
-        <div className="mt-2 flex-1">
+        <div className="mt-3 flex-1">
           <SidebarNav items={nav} />
         </div>
         {showPrivacyNote && (
@@ -60,10 +65,13 @@ export default function DashboardShell({
       </aside>
 
       {/* Main column */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-line bg-card px-8 py-3">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-line bg-card/70">
+        <header className="flex min-h-20 items-center justify-between border-b border-line bg-card/85 px-5 py-3 sm:px-8">
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-ink">
+            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-brass">
+              Workspace
+            </p>
+            <h1 className="truncate text-lg font-semibold tracking-tight text-ink">
               {title}
             </h1>
             {org && <p className="truncate text-xs text-muted">{org}</p>}
@@ -85,8 +93,8 @@ export default function DashboardShell({
             <LogoutButton />
           </div>
         </header>
-        <main className="flex-1 px-8 py-6">
-          <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+        <main className="flex-1 px-5 py-6 sm:px-8 sm:py-8">
+          <div className="mx-auto w-full max-w-[1680px]">{children}</div>
         </main>
       </div>
     </div>

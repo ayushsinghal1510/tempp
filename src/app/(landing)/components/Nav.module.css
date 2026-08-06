@@ -1,0 +1,231 @@
+/* Floats over whatever is beneath it rather than sitting in a band
+   of its own, and flips to light type when a dark panel passes
+   under it. */
+.wrap {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  padding: var(--gutter);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: calc(var(--shell) - var(--gutter) * 2);
+  margin-inline: auto;
+}
+
+/* ---- The shared glass treatment every segment wears ---- */
+.glass {
+  background: rgba(250, 248, 244, 0.62);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(250, 248, 244, 0.7);
+  box-shadow: 0 1px 2px rgba(25, 27, 21, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  border-radius: var(--r-pill);
+  /* One height for every segment, so the cluster reads as a single
+     bar rather than three pills of different sizes. */
+  min-height: 2rem;
+  transition: background-color 0.35s ease, border-color 0.35s ease, color 0.35s ease;
+}
+
+.dark .glass {
+  background: rgba(20, 23, 19, 0.42);
+  border-color: rgba(250, 248, 244, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ---- Segments ---- */
+.mark {
+  display: flex;
+  align-items: center;
+  padding: 0.125rem 0.8125rem;
+  color: var(--ink);
+  flex: none;
+  transition: color 0.35s ease;
+}
+
+.dark .mark {
+  color: var(--haze);
+}
+
+.brandText {
+  font-family: "Gilroy", var(--font-sans);
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: -0.01em;
+}
+
+.brandDot {
+  color: var(--brass);
+}
+
+.dark .brandDot {
+  color: var(--brass-lit);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.125rem;
+}
+
+.actions {
+  /* No auto margin: the bar is one centred cluster, not a
+     left/right split across the full width. */
+  flex: none;
+}
+
+.pill {
+  padding: 0.1875rem 0.8125rem;
+  border-radius: var(--r-pill);
+  font-size: 0.8125rem;
+  color: var(--slate);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.pill:hover {
+  background: rgba(25, 27, 21, 0.06);
+  color: var(--ink);
+}
+
+.dark .pill {
+  color: rgba(236, 233, 226, 0.72);
+}
+
+.dark .pill:hover {
+  background: rgba(250, 248, 244, 0.12);
+  color: var(--haze);
+}
+
+/* The section you are currently reading. */
+.pill[aria-current="true"] {
+  background: rgba(122, 108, 60, 0.14);
+  border-color: rgba(122, 108, 60, 0.28);
+  color: var(--brass);
+}
+
+.dark .pill[aria-current="true"] {
+  background: rgba(195, 174, 114, 0.16);
+  border-color: rgba(195, 174, 114, 0.34);
+  color: var(--brass-lit);
+}
+
+/* One quiet segment on the right, sized to match the others. */
+.login {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 1.0625rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  transition: color 0.35s ease, background-color 0.35s ease;
+}
+
+.login:hover {
+  background: rgba(250, 248, 244, 0.86);
+}
+
+.dark .login {
+  color: var(--haze);
+}
+
+.dark .login:hover {
+  background: rgba(20, 23, 19, 0.62);
+}
+
+/* ---- Mobile ---- */
+.toggle {
+  display: none;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toggle span {
+  display: block;
+  width: 15px;
+  height: 1.5px;
+  background: var(--ink);
+  border-radius: 2px;
+  transition: transform 0.25s ease, opacity 0.2s ease, background-color 0.35s ease;
+}
+
+.dark .toggle span {
+  background: var(--haze);
+}
+
+.toggleOpen span:nth-child(1) {
+  transform: translateY(2.75px) rotate(45deg);
+}
+
+.toggleOpen span:nth-child(2) {
+  opacity: 0;
+}
+
+.toggleOpen span:nth-child(3) {
+  transform: translateY(-2.75px) rotate(-45deg);
+}
+
+.panel {
+  display: none;
+}
+
+@media (max-width: 1000px) {
+  .links,
+  .actions {
+    display: none;
+  }
+
+  .toggle {
+    display: flex;
+  }
+
+  .panel {
+    display: block;
+    max-width: calc(var(--shell) - var(--gutter) * 2);
+    margin: 0.5rem auto 0;
+    padding: 0.5rem;
+    border-radius: var(--r-lg);
+    background: rgba(250, 248, 244, 0.94);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--line);
+    box-shadow: 0 12px 32px rgba(25, 27, 21, 0.12);
+  }
+
+  .panelLinks {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panelLinks a {
+    padding: 0.75rem 0.75rem;
+    font-size: 1rem;
+    color: var(--slate);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .panelActions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.625rem;
+  }
+
+  .btnFull {
+    width: 100%;
+  }
+}
