@@ -658,11 +658,13 @@ model PracticeResumeStudio {
   // PracticeResumeChat.messages.
   messages Json @default("[]")
 
-  // Cached compiler output. NULL means "recompile on next read" — every write
-  // to resumeTex nulls it. This is a cache and not a source of truth: a warm
-  // tectonic run is ~3.7s, far too slow to sit in the request path of a page
-  // view or an <iframe> load, but cheap enough to redo whenever it's missing.
-  pdf Bytes?
+  // Cached compiler output, in R2 — the bytes used to sit in this row as a
+  // `Bytes` column, which meant every query that forgot to `select` around it
+  // dragged a whole PDF out of Postgres. NULL still means "recompile on next
+  // read", and every write to resumeTex still nulls it. Cache, not source of
+  // truth: a warm tectonic run is ~3.7s, far too slow for the request path of
+  // a page view or an <iframe> load, but cheap enough to redo when missing.
+  pdfKey String? @map("pdf_key")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -685,6 +687,19 @@ model PracticeRound {
   createdAt    DateTime    @default(now()) @map("created_at")
 
   recordingStatus RecordingStatus @default(none) @map("recording_status")
+
+  // Where the video actually lives, in R2. The key rather than a URL: a bucket
+  // rename or a move between presigned and custom-domain serving would other-
+  // wise mean rewriting every row, and presigning needs the key regardless.
+  // Null on a round whose recording never arrived — and on nothing else, since
+  // the upload writes this in the same statement that flips status to `ready`.
+  //
+  // The content type is stored rather than re-derived because the container
+  // (webm vs mp4) depends on what the recording browser supported. Guessing it
+  // used to mean probing both extensions on disk; against object storage that
+  // would be a network round trip on every page render.
+  recordingKey         String? @map("recording_key")
+  recordingContentType String? @map("recording_content_type")
 
   // The end-of-session debrief, written once by the webhook when the roleplay
   // graph's assessor node fires. `mm` only — that track is `scoring: false`

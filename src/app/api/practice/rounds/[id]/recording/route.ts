@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
 import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth/session";
 import { roundVisibilityForEducator } from "@/lib/practice/access";
+import { r2, recordingKeyFor } from "@/lib/r2";
 import {
-  ensureRecordingsDir,
   extensionForContentType,
-  findRecording,
-  recordingPathFor,
+  findLegacyRecording,
 } from "@/lib/practice/recordingStorage";
 
 export const runtime = "nodejs";
@@ -70,26 +71,58 @@ export async function POST(
 
   const contentType = req.headers.get("content-type") ?? "video/webm";
   const ext = extensionForContentType(contentType);
+  const key = recordingKeyFor(id, ext);
 
-  await ensureRecordingsDir();
-  const destPath = recordingPathFor(id, ext);
+  const { client, bucket } = r2();
 
-  await pipeline(
-    Readable.fromWeb(
-      req.body as unknown as import("node:stream/web").ReadableStream<Uint8Array>,
-    ),
-    fs.createWriteStream(destPath),
-  );
+  // lib-storage rather than PutObject: a webcam recording of a ten-minute
+  // interview runs to tens of megabytes and arrives as a stream of unknown
+  // length, which PutObject cannot sign. This chunks it into a multipart
+  // upload and buffers only one part at a time.
+  const upload = new Upload({
+    client,
+    params: {
+      Bucket: bucket,
+      Key: key,
+      Body: Readable.fromWeb(
+        req.body as unknown as import("node:stream/web").ReadableStream<Uint8Array>,
+      ),
+      ContentType: contentType,
+    },
+    queueSize: 3,
+    partSize: 8 * 1024 * 1024,
+  });
 
-  // Only after the stream has fully drained to disk — flipping this earlier
-  // would tell the results page to render a <video> over a half-written file.
+  try {
+    await upload.done();
+  } catch (err) {
+    console.error(`[recording] upload to R2 failed for round ${id}:`, err);
+    // The student's tab has already navigated away; the only thing that can
+    // still be told the truth is the results page, via the status column.
+    await prisma.practiceRound
+      .update({ where: { id }, data: { recordingStatus: "failed" } })
+      .catch(() => {});
+    return NextResponse.json({ error: "Upload failed" }, { status: 502 });
+  }
+
+  // Only after the upload has completed — flipping this earlier would tell the
+  // results page to render a <video> over a half-written object. The key lands
+  // in the same statement, so a row can never claim `ready` with no object
+  // behind it.
   await prisma.practiceRound.update({
     where: { id },
-    data: { recordingStatus: "ready" },
+    data: {
+      recordingStatus: "ready",
+      recordingKey: key,
+      recordingContentType: contentType,
+    },
   });
 
   return NextResponse.json({ ok: true });
 }
+
+/** Long enough to watch a full session without the URL dying mid-scrub. */
+const PLAYBACK_URL_TTL_SECONDS = 6 * 60 * 60;
 
 export async function GET(
   req: Request,
@@ -99,14 +132,46 @@ export async function GET(
   const { error } = await authorizePlayback(id);
   if (error) return error;
 
-  const found = await findRecording(id);
+  const round = await prisma.practiceRound.findUnique({
+    where: { id },
+    select: { recordingKey: true, recordingContentType: true },
+  });
+
+  if (round?.recordingKey) {
+    // Redirect rather than proxy. R2 serves range requests natively — which is
+    // what makes scrubbing work — and this keeps tens of megabytes per replay
+    // off the app server. Auth still happens here, above: the signed URL is
+    // only ever minted for a caller who already passed authorizePlayback.
+    const { client, bucket } = r2();
+    const signed = await getSignedUrl(
+      client,
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: round.recordingKey,
+        ResponseContentType: round.recordingContentType ?? "video/webm",
+      }),
+      { expiresIn: PLAYBACK_URL_TTL_SECONDS },
+    );
+    return NextResponse.redirect(signed, 302);
+  }
+
+  // Pre-migration rows still on local disk. Everything below this line is the
+  // old streaming path, kept only for those; it goes when data/recordings does.
+  const found = await findLegacyRecording(id);
   if (!found) {
     return NextResponse.json({ error: "No recording" }, { status: 404 });
   }
-  const { filePath, contentType } = found;
-  const { size: fileSize } = await fs.promises.stat(filePath);
+  return streamFromDisk(req, found.filePath, found.contentType);
+}
 
+async function streamFromDisk(
+  req: Request,
+  filePath: string,
+  contentType: string,
+) {
+  const { size: fileSize } = await fs.promises.stat(filePath);
   const range = req.headers.get("range");
+
   if (!range) {
     return new NextResponse(
       Readable.toWeb(

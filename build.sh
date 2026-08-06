@@ -36,6 +36,21 @@ fi
 [ -n "${DATABASE_URL:-}" ] || fail "DATABASE_URL is not set. Add it to .env."
 echo "  using ${DATABASE_URL%%@*}@…(hidden)"
 
+# ── 1b. Object storage ──────────────────────────────────────────────────────
+# Every session recording and compiled resume lives in R2; nothing binary is on
+# local disk or in Postgres any more. Checked here rather than discovered at
+# 2am by a student whose interview recording had nowhere to go — the upload
+# route throws on a missing variable, deliberately, instead of degrading.
+step "Checking object storage (Cloudflare R2)"
+for var in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+  if [ -z "$(eval echo \"\${$var:-}\")" ] && [ -f .env ]; then
+    eval "$var=\"\$(grep -E '^$var=' .env | head -1 | cut -d= -f2- | tr -d '\"')\""
+    eval "export $var"
+  fi
+  [ -n "$(eval echo \"\${$var:-}\")" ] || fail "$var is not set. See docs/r2-migration.md."
+done
+echo "  bucket ${R2_BUCKET}"
+
 # ── 2. Dependencies ─────────────────────────────────────────────────────────
 step "Installing dependencies"
 # `npm ci` over `npm install`: it installs exactly the lockfile and wipes any

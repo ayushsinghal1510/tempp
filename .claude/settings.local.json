@@ -153,7 +153,10 @@
       "PowerShell(Get-NetTCPConnection *)",
       "PowerShell(Stop-Process *)",
       "Bash(sed 's/className=//')",
-      "Bash(export SHOT_DIR=\"C:/Users/Lenovo/AppData/Local/Temp/claude/D--vx-tempp/c463934f-0b27-4d83-8a0c-2300f0ceb32d/scratchpad\")"
+      "Bash(export SHOT_DIR=\"C:/Users/Lenovo/AppData/Local/Temp/claude/D--vx-tempp/c463934f-0b27-4d83-8a0c-2300f0ceb32d/scratchpad\")",
+      "Bash(xargs -I{} du -h data/recordings/{})",
+      "Bash(env -i bash -c 'sed -n \"1,60p\" build.sh > /tmp/bs.sh 2>/dev/null; true')",
+      "Bash(bash -c ' *)"
     ]
   }
 }

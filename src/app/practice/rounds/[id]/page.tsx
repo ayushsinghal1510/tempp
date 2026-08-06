@@ -147,11 +147,7 @@ export default async function PracticeRoundResultsPage({
   // Not a bare file check any more: the student is released from the call
   // before their recording finishes uploading, so "no file yet" and "there
   // will never be a file" are different answers and read differently below.
-  const recording = await resolveRecording(
-    id,
-    round.recordingStatus,
-    round.completedAt,
-  );
+  const recording = await resolveRecording(id, round);
 
   return (
     <main className="practice-page min-h-screen bg-canvas text-ink">

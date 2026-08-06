@@ -68,10 +68,10 @@ export default async function ResumeStudioPage({
             companyId={companyId}
             companyName={company?.companyName ?? null}
             initialMessages={studio.messages as unknown as UIMessage[]}
-            // `pdf === null` means the last write didn't compile. Passed in so
+            // No `pdfKey` means the last write didn't compile. Passed in so
             // the first paint shows the repair message rather than flashing an
             // iframe that will 409.
-            initiallyRenderable={studio.pdf !== null}
+            initiallyRenderable={studio.pdfKey !== null}
           />
         ) : (
           <ResumeStudioStart />

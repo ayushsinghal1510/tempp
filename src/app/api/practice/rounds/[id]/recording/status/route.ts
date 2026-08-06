@@ -23,7 +23,13 @@ async function loadRound(roundId: string) {
 
   const round = await prisma.practiceRound.findUnique({
     where: { id: roundId },
-    select: { userId: true, recordingStatus: true, completedAt: true },
+    select: {
+      userId: true,
+      recordingStatus: true,
+      recordingKey: true,
+      recordingContentType: true,
+      completedAt: true,
+    },
   });
   if (!round) return { error: notFound() as NextResponse, round: null };
 
@@ -44,11 +50,7 @@ export async function GET(
   const { error, round } = await loadRound(id);
   if (error) return error;
 
-  const resolved = await resolveRecording(
-    id,
-    round!.recordingStatus,
-    round!.completedAt,
-  );
+  const resolved = await resolveRecording(id, round!);
   return NextResponse.json({ state: resolved.state });
 }
 

@@ -99,7 +99,7 @@ export default async function EducatorSessionPage({
   // not even be looked up here, because the same flag is what makes the
   // playback route refuse to stream it.
   const recording = visibility.content
-    ? await resolveRecording(id, round.recordingStatus, round.completedAt)
+    ? await resolveRecording(id, round)
     : ({ state: "none" } as const);
 
   // Word counts are analytics, so they sit above the visibility line with the

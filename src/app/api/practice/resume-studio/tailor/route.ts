@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth/session";
 import { getAccessibleCompany } from "@/lib/practice/access";
-import { getResumeStudio } from "@/lib/practice/resumeStudio";
+import { copyResumePdf, getResumeStudio } from "@/lib/practice/resumeStudio";
 
 export const runtime = "nodejs";
 
@@ -56,13 +56,24 @@ export async function POST(req: Request) {
       companyId,
       resumeTex: base.resumeTex,
       sourceText: base.sourceText,
-      // Copied so the variant renders immediately instead of paying a compile
-      // on first paint. It is a byte-identical document until the agent
-      // rewrites it, so the cache is valid.
-      pdf: base.pdf,
       messages: [],
     },
   });
+
+  // The cached PDF is copied so the variant renders immediately instead of
+  // paying a compile on first paint — it is a byte-identical document until the
+  // agent rewrites it, so the cache is valid. Server-side CopyObject: the bytes
+  // never travel here and back. Needs the variant's id, so it can only happen
+  // after the create above.
+  //
+  // Best-effort by design. A failed copy costs one 3.7s compile the first time
+  // the student opens the variant; failing the fork over it would cost them the
+  // variant itself.
+  if (base.pdfKey) {
+    await copyResumePdf(base.pdfKey, variant.id).catch((err) => {
+      console.error("[resume-studio] variant PDF copy failed:", err);
+    });
+  }
 
   return NextResponse.json({ ok: true, id: variant.id, existed: false });
 }

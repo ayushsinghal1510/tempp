@@ -1,10 +1,31 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION RECORDINGS — R2-backed.
+//
+// Recordings used to live at data/recordings/<roundId>.<ext> and were found by
+// convention: probe .webm, then .mp4, and whichever existed was the answer. The
+// database knew only a status flag, and the FILE was the source of truth.
+//
+// That inverts here. The row carries the object key and content type, so
+// resolving a recording is a field read rather than a filesystem probe — which
+// matters because the equivalent probe against object storage would be one or
+// two network round trips on every render of a results page.
+//
+// The local disk is kept as a read-only fallback for rows written before the
+// migration whose upload didn't land. See docs/r2-migration.md for when that
+// can go (it is dead weight once data/recordings is deleted).
+// ─────────────────────────────────────────────────────────────────────────────
+
+import "server-only";
+
 import path from "node:path";
 import fs from "node:fs/promises";
 
-// Filesystem-only, no DB row — the container in front of this recording
-// (mp4 vs webm) depends on what the recording browser supported, so it's
-// encoded in the filename itself rather than a sidecar metadata file.
-export const RECORDINGS_DIR = path.join(process.cwd(), "data", "recordings");
+/** Legacy location. Read-only now — nothing writes here any more. */
+export const LEGACY_RECORDINGS_DIR = path.join(
+  process.cwd(),
+  "data",
+  "recordings",
+);
 
 const CANDIDATE_EXTENSIONS = ["webm", "mp4"] as const;
 
@@ -18,19 +39,24 @@ export function extensionForContentType(contentType: string): string {
   return "webm";
 }
 
-export function recordingPathFor(roundId: string, ext: string): string {
-  return path.join(RECORDINGS_DIR, `${roundId}.${ext}`);
-}
-
-export async function ensureRecordingsDir(): Promise<void> {
-  await fs.mkdir(RECORDINGS_DIR, { recursive: true });
+export function legacyRecordingPathFor(roundId: string, ext: string): string {
+  return path.join(LEGACY_RECORDINGS_DIR, `${roundId}.${ext}`);
 }
 
 /**
- * What the UI should show for a round's recording, reconciling the DB flag
- * with what's actually on disk. The file is the source of truth when it
- * exists — a round created before `recordingStatus` existed still reads
- * `none` but may well have a playable file next to it.
+ * The subset of a PracticeRound this module needs. Taking a shape rather than
+ * loose arguments so that adding a field here is a type error at every call
+ * site instead of a silently-missing value.
+ */
+export type RecordingRow = {
+  recordingStatus: "none" | "processing" | "ready" | "failed";
+  recordingKey: string | null;
+  recordingContentType: string | null;
+  completedAt: Date | null;
+};
+
+/**
+ * What the UI should show for a round's recording.
  */
 export type ResolvedRecording =
   | { state: "ready"; contentType: string }
@@ -48,28 +74,45 @@ export const RECORDING_STALE_AFTER_MS = 20 * 60 * 1000;
 
 export async function resolveRecording(
   roundId: string,
-  status: "none" | "processing" | "ready" | "failed",
-  completedAt: Date | null,
+  round: RecordingRow,
 ): Promise<ResolvedRecording> {
-  const found = await findRecording(roundId);
-  if (found) return { state: "ready", contentType: found.contentType };
+  // A key is written in the same statement that flips the status to `ready`,
+  // so its presence is proof the bytes finished landing in R2.
+  if (round.recordingKey) {
+    return {
+      state: "ready",
+      contentType: round.recordingContentType ?? "video/webm",
+    };
+  }
 
-  if (status === "processing") {
-    const since = completedAt ? Date.now() - completedAt.getTime() : 0;
+  // Pre-migration rows: the file on disk is still the answer for these.
+  const legacy = await findLegacyRecording(roundId);
+  if (legacy) return { state: "ready", contentType: legacy.contentType };
+
+  if (round.recordingStatus === "processing") {
+    const since = round.completedAt
+      ? Date.now() - round.completedAt.getTime()
+      : 0;
     return since > RECORDING_STALE_AFTER_MS
       ? { state: "failed" }
       : { state: "processing" };
   }
-  // "ready" with no file means the file was deleted out from under us; that's
-  // indistinguishable from never having had one, so say so plainly.
-  return status === "failed" ? { state: "failed" } : { state: "none" };
+  // "ready" with nothing behind it means the object was deleted out from under
+  // us; that's indistinguishable from never having had one, so say so plainly.
+  return round.recordingStatus === "failed"
+    ? { state: "failed" }
+    : { state: "none" };
 }
 
-export async function findRecording(
+/**
+ * A recording still sitting on local disk, from before the R2 migration.
+ * Returns null once data/recordings is gone, which is the expected steady state.
+ */
+export async function findLegacyRecording(
   roundId: string,
 ): Promise<{ filePath: string; contentType: string } | null> {
   for (const ext of CANDIDATE_EXTENSIONS) {
-    const filePath = recordingPathFor(roundId, ext);
+    const filePath = legacyRecordingPathFor(roundId, ext);
     try {
       await fs.access(filePath);
       return { filePath, contentType: CONTENT_TYPE_FOR_EXT[ext] };
