@@ -87,34 +87,34 @@
   color: var(--ink);
 }
 
-.landing *,
-.landing *::before,
-.landing *::after {
+:where(.landing) *,
+:where(.landing) *::before,
+:where(.landing) *::after {
   box-sizing: border-box;
 }
 
-.landing h1,
-.landing h2,
-.landing h3,
-.landing h4,
-.landing p,
-.landing figure,
-.landing blockquote {
+:where(.landing) h1,
+:where(.landing) h2,
+:where(.landing) h3,
+:where(.landing) h4,
+:where(.landing) p,
+:where(.landing) figure,
+:where(.landing) blockquote {
   margin: 0;
 }
 
-.landing a {
+:where(.landing) a {
   color: inherit;
   text-decoration: none;
 }
 
-.landing img,
-.landing svg {
+:where(.landing) img,
+:where(.landing) svg {
   display: block;
   max-width: 100%;
 }
 
-.landing button {
+:where(.landing) button {
   font: inherit;
   color: inherit;
   background: none;
@@ -122,36 +122,36 @@
   cursor: pointer;
 }
 
-.landing ::selection {
+:where(.landing) ::selection {
   background: var(--ink);
   color: var(--haze);
 }
 
-.landing :focus-visible {
+:where(.landing) :focus-visible {
   outline: 2px solid var(--brass);
   outline-offset: 3px;
   border-radius: 4px;
 }
 
-.landing .shell {
+:where(.landing) .shell {
   width: 100%;
   max-width: var(--shell);
   margin-inline: auto;
   padding-inline: var(--gutter);
 }
 
-.landing .shell-tight {
+:where(.landing) .shell-tight {
   width: 100%;
   max-width: var(--shell-tight);
   margin-inline: auto;
   padding-inline: var(--gutter);
 }
 
-.landing .section {
+:where(.landing) .section {
   padding-top: var(--section-gap);
 }
 
-.landing .display {
+:where(.landing) .display {
   font-family: var(--font-display);
   font-weight: 400;
   letter-spacing: -0.02em;
@@ -159,20 +159,20 @@
   text-wrap: balance;
 }
 
-.landing .display em,
-.landing .h2 em,
-.landing .h3 em {
+:where(.landing) .display em,
+:where(.landing) .h2 em,
+:where(.landing) .h3 em {
   font-style: italic;
   color: var(--brass);
 }
 
-.landing .on-dark .display em,
-.landing .on-dark .h2 em,
-.landing .on-dark .h3 em {
+:where(.landing) .on-dark .display em,
+:where(.landing) .on-dark .h2 em,
+:where(.landing) .on-dark .h3 em {
   color: var(--brass-lit);
 }
 
-.landing .h2 {
+:where(.landing) .h2 {
   font-family: var(--font-display);
   font-weight: 400;
   font-size: var(--t-h2);
@@ -182,7 +182,7 @@
   max-width: 20ch;
 }
 
-.landing .h3 {
+:where(.landing) .h3 {
   font-family: var(--font-display);
   font-weight: 400;
   font-size: var(--t-h3);
@@ -192,7 +192,7 @@
   max-width: 24ch;
 }
 
-.landing .sec-head {
+:where(.landing) .sec-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -200,23 +200,23 @@
   margin-top: 1rem;
 }
 
-.landing .sec-head .lead {
+:where(.landing) .sec-head .lead {
   flex: 1 1 20rem;
   padding-bottom: 0.35rem;
 }
 
-.landing .lead {
+:where(.landing) .lead {
   font-size: var(--t-lead);
   line-height: 1.6;
   color: var(--slate);
   max-width: var(--measure);
 }
 
-.landing .on-dark .lead {
+:where(.landing) .on-dark .lead {
   color: rgba(236, 233, 226, 0.66);
 }
 
-.landing .eyebrow {
+:where(.landing) .eyebrow {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -227,7 +227,7 @@
   color: var(--mist);
 }
 
-.landing .eyebrow::before {
+:where(.landing) .eyebrow::before {
   content: "";
   width: 1.75rem;
   height: 1px;
@@ -235,21 +235,21 @@
   flex: none;
 }
 
-.landing .on-dark .eyebrow {
+:where(.landing) .on-dark .eyebrow {
   color: rgba(236, 233, 226, 0.5);
 }
 
-.landing .on-dark .eyebrow::before {
+:where(.landing) .on-dark .eyebrow::before {
   background: var(--line-light-strong);
 }
 
-.landing .mono {
+:where(.landing) .mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
 
-.landing .btn {
+:where(.landing) .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -265,49 +265,49 @@
   white-space: nowrap;
 }
 
-.landing .btn:active {
+:where(.landing) .btn:active {
   transform: translateY(1px);
 }
 
-.landing .btn-solid {
+:where(.landing) .btn-solid {
   background: var(--ink);
   color: var(--haze);
 }
 
-.landing .btn-solid:hover {
+:where(.landing) .btn-solid:hover {
   background: var(--pine);
 }
 
-.landing .btn-ghost {
+:where(.landing) .btn-ghost {
   background: rgba(250, 248, 244, 0.72);
   border-color: var(--line-strong);
   color: var(--ink);
 }
 
-.landing .btn-ghost:hover {
+:where(.landing) .btn-ghost:hover {
   border-color: var(--ink);
   background: var(--paper);
 }
 
-.landing .btn-invert {
+:where(.landing) .btn-invert {
   background: var(--haze);
   color: var(--ink);
 }
 
-.landing .btn-invert:hover {
+:where(.landing) .btn-invert:hover {
   background: #fff;
 }
 
-.landing .btn-outline-light {
+:where(.landing) .btn-outline-light {
   border-color: var(--line-light-strong);
   color: var(--haze);
 }
 
-.landing .btn-outline-light:hover {
+:where(.landing) .btn-outline-light:hover {
   border-color: var(--haze);
 }
 
-.landing .tag {
+:where(.landing) .tag {
   font-size: var(--t-label);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -316,17 +316,17 @@
   white-space: nowrap;
 }
 
-.landing .tag-moss {
+:where(.landing) .tag-moss {
   background: var(--moss-bg);
   color: var(--moss);
 }
 
-.landing .tag-ochre {
+:where(.landing) .tag-ochre {
   background: var(--ochre-bg);
   color: var(--ochre);
 }
 
-.landing .tag-mute {
+:where(.landing) .tag-mute {
   background: rgba(25, 27, 21, 0.07);
   color: var(--slate);
 }
@@ -354,14 +354,14 @@
   }
 }
 
-.landing .rise {
+:where(.landing) .rise {
   animation: rise 0.75s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landing *,
-  .landing *::before,
-  .landing *::after {
+  :where(.landing) *,
+  :where(.landing) *::before,
+  :where(.landing) *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
