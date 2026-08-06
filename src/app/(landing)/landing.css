@@ -39,8 +39,43 @@
   --r-xl: 1.75rem;
   --r-pill: 999px;
 
+  /* ---- Palette ----------------------------------------------------------
+     Sampled from public/assets/hero-valley.webp: stone haze, forest ink,
+     slate rock, and a single brass note from the lit grass.
+
+     These are declared here rather than inherited from globals.css on
+     purpose. globals.css ships a .dark block that flips --ink to a near
+     white (#f4f1e9) but leaves --haze pale, and the theme script in the
+     root layout adds .dark from prefers-color-scheme when the visitor has
+     no stored preference. Inheriting would therefore paint the marketing
+     page near-white on pale stone — about 1.05:1 — for any first-time
+     visitor on a dark-mode OS. The landing is a light-only design, so it
+     owns its colours and ignores whatever theme the dashboard is in. ---- */
+  --haze: #ece9e2; /* page ground, from the pale sky band   */
+  --haze-deep: #e0dbd1; /* inset wells, from the far haze        */
+  --paper: #faf8f4; /* raised surfaces                       */
+  --pine: #2b312e; /* dark sections, from the shadowed firs */
+  --pine-deep: #1b1f1c; /* deepest ground                        */
+  --ink: #191b15; /* text, from the near-black treeline    */
+  --slate: #545b64; /* body copy, from the rock faces        */
+  --mist: #6f7278; /* labels and captions                   */
+
+  --brass: #7a6c3c;
+  --brass-lit: #c3ae72; /* the same hue, for dark grounds        */
+
+  --moss: #4c5a39; /* ready, available                      */
   --moss-bg: rgba(76, 90, 57, 0.12);
+  --ochre: #7d6026; /* needs attention                       */
   --ochre-bg: rgba(125, 96, 38, 0.13);
+  --ember-lit: #cb8f76;
+
+  --line: rgba(25, 27, 21, 0.1);
+  --line-strong: rgba(25, 27, 21, 0.2);
+  --line-light: rgba(250, 248, 244, 0.14);
+  --line-light-strong: rgba(250, 248, 244, 0.28);
+
+  /* Keeps scrollbars and form controls light even under .dark. */
+  color-scheme: light;
 
   font-family: var(--font-sans);
   font-size: var(--t-body);
