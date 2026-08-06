@@ -5,7 +5,7 @@ import { tenantConfig } from "@/lib/tenants/config";
 import PracticeNavTabs from "./PracticeNavTabs";
 import TourTrigger from "./TourTrigger";
 import GuidedTour from "./GuidedTour";
-import { CircleHelp, PanelLeft, Search } from "lucide-react";
+import { PanelLeft } from "lucide-react";
 
 /**
  * Shared top bar + nav for every practice page.
@@ -48,7 +48,6 @@ export default function PracticeHeader({
             vertical
             unitLabel={unitLabel}
             sessionLabel={sessionLabel}
-            showResumeStudio={features.resume}
           />
         </div>
         <div className="m-3 rounded-xl border border-line bg-brand-soft p-3">
@@ -59,7 +58,11 @@ export default function PracticeHeader({
         </div>
       </aside>
 
-      <header className="sticky top-0 z-20 border-b border-line bg-card/95 backdrop-blur lg:ml-64">
+      {/* No lg:ml-64 here. This header renders inside <main class="practice-page">,
+          which already carries padding-left: 16rem at lg to clear the fixed rail
+          above. Offsetting again would push the bar 16rem past the rail and open
+          a gap the width of the rail itself. */}
+      <header className="sticky top-0 z-20 border-b border-line bg-card/95 backdrop-blur">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand text-primary-foreground lg:hidden">
@@ -74,12 +77,6 @@ export default function PracticeHeader({
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <span className="hidden text-sm text-muted sm:inline">{userName}</span>
-            <button aria-label="Search" className="hidden h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-brand-soft hover:text-ink md:grid">
-              <Search className="h-4 w-4" />
-            </button>
-            <button aria-label="Help" className="hidden h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-brand-soft hover:text-ink sm:grid">
-              <CircleHelp className="h-4 w-4" />
-            </button>
             {/* The tour walks through scored charts, which cus does not have. */}
             {features.scoring && <TourTrigger />}
             <ThemeToggle />
@@ -90,7 +87,6 @@ export default function PracticeHeader({
           <PracticeNavTabs
             unitLabel={unitLabel}
             sessionLabel={sessionLabel}
-            showResumeStudio={features.resume}
           />
         </div>
       </header>

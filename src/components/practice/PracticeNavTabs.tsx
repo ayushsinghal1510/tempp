@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Building2, FileText, History, LayoutDashboard } from "lucide-react";
+import { Building2, History, LayoutDashboard } from "lucide-react";
 
 /**
  * Labels are passed in rather than hardcoded — the routes are shared across
@@ -15,28 +15,23 @@ import { Building2, FileText, History, LayoutDashboard } from "lucide-react";
 export default function PracticeNavTabs({
   unitLabel,
   sessionLabel,
-  showResumeStudio,
   vertical = false,
 }: {
   unitLabel: string;
   sessionLabel: string;
-  /**
-   * Whether the tenant has resumes at all (`features.resume`). Passed down
-   * rather than derived here for the same reason the labels are: this is a
-   * client component and the tenant config is a server-side lookup.
-   */
-  showResumeStudio: boolean;
   /** Used by the desktop application rail. */
   vertical?: boolean;
 }) {
   const pathname = usePathname();
 
+  // Three destinations only. Resume Studio is deliberately absent: the resume
+  // itself is still load-bearing (features.resume gates whether one must be
+  // uploaded before a session can start, and the company page hangs the resume
+  // chat off it), but it is reached from the company that needs it rather than
+  // from a standalone nav entry. /practice/resume-studio still resolves.
   const tabs = [
     { href: "/practice", label: "Home" },
     { href: "/practice/companies", label: unitLabel },
-    ...(showResumeStudio
-      ? [{ href: "/practice/resume-studio", label: "Resume" }]
-      : []),
     { href: "/practice/sessions", label: sessionLabel },
   ];
 
@@ -51,9 +46,7 @@ export default function PracticeNavTabs({
           ? LayoutDashboard
           : t.href === "/practice/companies"
             ? Building2
-            : t.href === "/practice/resume-studio"
-              ? FileText
-              : History;
+            : History;
         return (
           <Link
             key={t.href}

@@ -33,6 +33,7 @@ export default function SessionsTable({
   topics,
   showCompanyColumn = true,
   unitTitle,
+  unitPlural,
 }: {
   sessions: SessionRow[];
   /**
@@ -51,6 +52,12 @@ export default function SessionsTable({
    * in for the other two, which is the exact bug this prop exists to fix.
    */
   unitTitle: string;
+  /**
+   * The tenant's copy.unitPlural, for the "All …" filter option. Separate from
+   * unitTitle because these nouns do not pluralise by appending an "s":
+   * lowercasing unitTitle and adding one produced "All companys".
+   */
+  unitPlural: string;
 }) {
   const scoring = topics.length > 0;
   const [query, setQuery] = useState("");
@@ -99,7 +106,7 @@ export default function SessionsTable({
             className="w-auto min-w-[11rem]"
             aria-label={`Filter by ${unitTitle.toLowerCase()}`}
           >
-            <option value="all">All {unitTitle.toLowerCase()}s</option>
+            <option value="all">All {unitPlural}</option>
             {companyOptions.map(([id, name]) => (
               <option key={id} value={id}>
                 {name}

@@ -65,6 +65,7 @@ export default async function PracticeSessionsPage() {
           topics={topics}
           showCompanyColumn
           unitTitle={copy.unitTitle}
+          unitPlural={copy.unitPlural}
         />
       </div>
     </main>

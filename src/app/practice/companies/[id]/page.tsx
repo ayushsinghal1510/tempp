@@ -363,6 +363,7 @@ export default async function PracticeCompanyPage({
               topics={topics}
               showCompanyColumn={false}
               unitTitle={copy.unitTitle}
+              unitPlural={copy.unitPlural}
             />
           </div>
         </section>
