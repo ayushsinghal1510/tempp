@@ -159,7 +159,13 @@
       "Bash(bash -c ' *)",
       "Bash(npx playwright *)",
       "Bash(awk '{print $2, $11, $12, $13}')",
-      "Bash(pkill -f \"next start -p 3011\")"
+      "Bash(pkill -f \"next start -p 3011\")",
+      "Bash(awk 'END{print NR\" lines in schema\"}' prisma/schema.prisma)",
+      "Bash(awk 'NR>=1180 && NR<=1310 && /^  \\\\}, \\\\[/' src/components/interview/InterviewRoom.tsx)",
+      "Bash(echo \"lint exit: $?\")",
+      "PowerShell(New-Item *)",
+      "PowerShell(& \"$env:USERPROFILE\\\\.local\\\\bin\\\\tectonic.exe\" --version)",
+      "Bash(perl -0pi -e 's/await saveResumeTex\\\\\\(studio\\\\.id,/await saveResumeTex\\(studioId,/g; s/compile failed for \\\\$\\\\{studio\\\\.id\\\\}/compile failed for \\\\${studioId}/g; s/\"\\\\[resume-studio\\\\] writeResume failed for\", studio\\\\.id, err/\"[resume-studio] writeResume failed for\", studioId, err/g' src/app/api/practice/resume-studio/chat/route.ts)"
     ]
   }
 }

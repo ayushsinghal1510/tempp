@@ -26,10 +26,33 @@ export const WEBHOOK_URL =
   process.env.NEXT_PUBLIC_WEBHOOK_URL ||
   (typeof window !== "undefined" ? window.location.origin : "");
 
-const RAW_VX_SERVER = process.env.NEXT_PUBLIC_VX_SERVER || "voice.voxio.in";
-export const VX_SERVER = (
-  /^https?:\/\//.test(RAW_VX_SERVER) ? RAW_VX_SERVER : `https://${RAW_VX_SERVER}`
-).replace(/\/+$/, "");
+/** Accepts a bare host or a full origin; always yields a trailing-slash-free origin. */
+function normaliseServer(raw: string): string {
+  return (/^https?:\/\//.test(raw) ? raw : `https://${raw}`).replace(/\/+$/, "");
+}
+
+/** The audio-only tracks: jer (interview), practice and nim (clinical). */
+export const VX_SERVER = normaliseServer(
+  process.env.NEXT_PUBLIC_VX_SERVER || "voice.voxio.in",
+);
+
+/**
+ * The avatar tracks — cus (custom workflow) plus the two roleplays, mm and pr.
+ *
+ * Exactly the set that negotiates video (see PARTICIPANTS_VIDEO below): those
+ * are the sessions where the backend renders a face, which needs a GPU box the
+ * audio-only tracks don't, so it is deployed and scaled separately.
+ *
+ * Falls back to NEXT_PUBLIC_VX_SERVER when unset rather than to the
+ * voice.voxio.in default, so a deployment that hasn't split its servers yet —
+ * or a dev pointing everything at one tunnel — keeps working off the single
+ * variable it already sets.
+ */
+export const VX_SERVER_GPU = normaliseServer(
+  process.env.NEXT_PUBLIC_VX_SERVER_GPU ||
+    process.env.NEXT_PUBLIC_VX_SERVER ||
+    "voice.voxio.in",
+);
 
 export const FLOW_API_KEY = process.env.NEXT_PUBLIC_FLOW_API_KEY || "";
 

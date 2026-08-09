@@ -219,9 +219,28 @@ ${
  * of package banners the model reads as context rather than as a task. Naming
  * the three overwhelmingly common causes up front fixes most failures in one
  * retry instead of three.
+ *
+ * `repairsLeft` is how many more times the model may call writeResume in this
+ * turn. It is stated to the model rather than merely enforced behind it: a
+ * model that does not know it is on its last attempt spends that attempt on
+ * another speculative rewrite, where one told the budget is gone writes the
+ * honest "I couldn't fix this" the student needs. Zero switches the whole
+ * message from "retry" to "stop", because a retry instruction the runtime will
+ * refuse to honour just produces a tool call that never runs.
  */
-export function compileFailureMessage(log: string): string {
-  return `The document did NOT compile. Fix it and call writeResume again with the corrected full body.
+export function compileFailureMessage(log: string, repairsLeft: number): string {
+  if (repairsLeft <= 0) {
+    return `The document did NOT compile, and you have no repair attempts left in this turn — do NOT call writeResume again.
+
+Your last version was saved, so nothing the student wrote is lost, but it cannot be rendered. Tell them plainly that the draft won't compile, say in one line what the compiler objected to, and ask them to reply so you can try again with a fresh budget.
+
+Compiler log (the error is near the end):
+${log}`;
+  }
+
+  return `The document did NOT compile. Fix it and call writeResume again with the corrected full body. You have ${repairsLeft} repair attempt${repairsLeft === 1 ? "" : "s"} left.
+
+Change only what the log points at. Rewriting the whole document to route around an error loses the student's content and usually reintroduces the same fault somewhere else.
 
 The usual causes, in order: an unescaped % & $ # _ or { }; a \\resumeList, \\resumeBullets or \\begin{...} without its matching end; or a command that is not in the list you were given.
 

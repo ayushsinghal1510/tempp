@@ -32,9 +32,20 @@ mkdir -p ~/.local/bin && curl -sL \
   | tar xz -C ~/.local/bin && chmod +x ~/.local/bin/tectonic
 ```
 
+On Windows, take the `x86_64-pc-windows-msvc` zip from the same release and
+unpack `tectonic.exe` into `%USERPROFILE%\.local\bin`:
+
+```powershell
+$dest = "$env:USERPROFILE\.local\bin"
+New-Item -ItemType Directory -Force $dest | Out-Null
+Invoke-WebRequest -Uri "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.17.0/tectonic-0.17.0-x86_64-pc-windows-msvc.zip" -OutFile "$env:TEMP\tectonic.zip"
+Expand-Archive -Path "$env:TEMP\tectonic.zip" -DestinationPath $dest -Force
+```
+
 `resolveBinary()` in `src/lib/resume/compile.ts` looks in `$TECTONIC_BIN`, then
-`~/.local/bin/tectonic`, then `/usr/local/bin/tectonic`, then `PATH`. Set
-`TECTONIC_BIN` if your image puts it somewhere else.
+`~/.local/bin/tectonic` (`tectonic.exe` on Windows), then
+`/usr/local/bin/tectonic`, then `PATH`. Set `TECTONIC_BIN` if your image puts it
+somewhere else.
 
 Verify the toolchain and the shared template:
 
@@ -47,9 +58,22 @@ is shared by every resume in the product, so a typo in it breaks every student
 at once, and it is exactly the kind of breakage a type check cannot see. The
 script caught a missing `\color` package the first time it ran.
 
-**Timings** (measured, this machine): ~15s for the very first compile on a cold
-package cache, ~1.5s warm. The cache lives under `~/.cache/Tectonic`, so the
-first compile after a fresh container is always the slow one.
+**Run it as part of provisioning, not just to check the template.** The first
+compile on a cold cache downloads the packages the document needs and can
+exceed `compile.ts`'s 60s `TIMEOUT_MS` on its own — measured on Windows at
+>60s cold against ~0.6s warm, i.e. the very first student to open the studio
+after a fresh deploy would otherwise eat the timeout. The verification run
+warms the cache so nobody hits that.
+
+**Timings**: ~15s for the very first compile on a cold package cache (Linux, as
+originally measured; over 60s on the Windows box this was re-measured on),
+~0.6-1.5s warm. The cache lives under `~/.cache/Tectonic`, so the first compile
+after a fresh container is always the slow one.
+
+Note that `npx tsx scripts/verify-resume-latex.ts` cannot run as written: the
+resume libs `import "server-only"`, which Next aliases in its bundler but plain
+`tsx` cannot resolve (it is not a dependency in `package.json`). Either add the
+package or run the script with a resolver shim.
 
 ---
 

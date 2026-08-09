@@ -47,6 +47,31 @@ export class TectonicMissingError extends Error {
 }
 
 /**
+ * Raised when tectonic was killed by the timeout below rather than exiting with
+ * a TeX error. Also an ops problem, not a TeX one, and the distinction is
+ * load-bearing: a timed-out compile produces no log, so treating it as a LaTeX
+ * failure hands the model an empty error and asks it to "fix" a document that
+ * may be perfectly valid — which it answers by rewriting good content until the
+ * repair budget is gone.
+ *
+ * Overwhelmingly this is a cold package cache. A first compile on a fresh
+ * machine downloads the TeX packages the document needs and can exceed the
+ * whole timeout on its own (measured here: over 60s cold, ~0.6s once warm),
+ * which is why provisioning ends with a verification run — see
+ * docs/resume-studio.md.
+ */
+export class TectonicTimeoutError extends Error {
+  constructor(ms: number) {
+    super(
+      `tectonic exceeded ${ms}ms and was killed. If this is a new machine the ` +
+        `package cache is probably cold — run scripts/verify-resume-latex.ts ` +
+        `once to warm it. See docs/resume-studio.md.`,
+    );
+    this.name = "TectonicTimeoutError";
+  }
+}
+
+/**
  * Where the binary lives, in priority order: an explicit env override first so
  * a deploy can point at wherever its image put it, then the conventional
  * per-user install path, then bare `tectonic` for a PATH install.
@@ -55,9 +80,16 @@ export class TectonicMissingError extends Error {
  * silently stops producing PDFs is worse than one that reports it can't.
  */
 function resolveBinary(): string {
+  // The release archive is `tectonic.exe` on Windows, so a bare-name probe
+  // finds nothing there and every compile falls through to the PATH guess —
+  // which reports the toolchain as missing on a machine where it is installed,
+  // and the studio then tells the student their resume cannot be rendered.
+  // The suffix is empty everywhere else, so this is a no-op off Windows.
+  const exe = process.platform === "win32" ? ".exe" : "";
+
   const candidates = [
     process.env.TECTONIC_BIN,
-    join(homedir(), ".local", "bin", "tectonic"),
+    join(homedir(), ".local", "bin", `tectonic${exe}`),
     "/usr/local/bin/tectonic",
   ].filter((c): c is string => Boolean(c));
 
@@ -66,7 +98,7 @@ function resolveBinary(): string {
   }
   // Last resort: trust PATH. If it isn't there either, execFile reports ENOENT
   // and compile() turns that into TectonicMissingError.
-  return "tectonic";
+  return `tectonic${exe}`;
 }
 
 /** Compile timeout. A resume that hasn't built in 60s is not going to. */
@@ -109,8 +141,15 @@ export async function compileLatex(tex: string): Promise<CompileResult> {
         "--untrusted",
       ]);
     } catch (err) {
-      const e = err as NodeJS.ErrnoException & { stderr?: string };
+      const e = err as NodeJS.ErrnoException & {
+        stderr?: string;
+        killed?: boolean;
+      };
       if (e.code === "ENOENT") throw new TectonicMissingError([bin]);
+      // execFile sets `killed` when it is the timeout that ended the process,
+      // which is the only way to tell it apart from a non-zero exit — both
+      // arrive here as an Error and a timed-out run leaves no usable log.
+      if (e.killed) throw new TectonicTimeoutError(TIMEOUT_MS);
 
       // A non-zero exit is a LaTeX error. Prefer the .log file: tectonic's
       // stderr is a summary, the log has the line numbers the model needs.

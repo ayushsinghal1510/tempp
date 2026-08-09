@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { topicLabel } from "@/lib/practice/metrics";
+import { shortDate } from "@/lib/format";
 import type { TopicMeta } from "@/lib/practice/topics";
 import type { TenantConfig } from "@/lib/tenants/config";
 import type { Tier } from "@/lib/research/tierProfiles";
@@ -173,8 +174,15 @@ export default function CompaniesTable({
                     <div className="text-xs text-muted">
                       {c.jobTitle} · {c.totalSessions} session
                       {c.totalSessions === 1 ? "" : "s"}
+                      {/* shortDate, not a bare toLocaleDateString(): this is a
+                          client component, so an unpinned locale is resolved
+                          from Node on the server and from the browser on the
+                          client. They disagree ("07/08/2026" vs "7/8/2026"),
+                          which React reports as a hydration mismatch and
+                          recovers from by throwing away and re-rendering this
+                          whole subtree. */}
                       {c.assigned?.dueDate &&
-                        ` · due ${new Date(c.assigned.dueDate).toLocaleDateString()}`}
+                        ` · due ${shortDate(new Date(c.assigned.dueDate))}`}
                     </div>
                     {c.assigned?.deadline === "locked" && (
                       // Says who can fix it, not just that it's broken — a

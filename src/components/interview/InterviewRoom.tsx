@@ -9,6 +9,7 @@ import {
   PARTICIPANTS,
   PARTICIPANTS_VIDEO,
   VX_SERVER,
+  VX_SERVER_GPU,
   FLOW_API_KEY,
 } from "@/lib/voice/customs";
 import {
@@ -325,6 +326,13 @@ export default function InterviewRoom({
           : MUTHU_NAME
         : (scenario?.patientName ?? drive?.companyName ?? "Practice Interviewer")
       : company!.name;
+  // Which voice backend this session talks to. Same branch as the
+  // PARTICIPANTS_VIDEO one further down and for the same reason: cus
+  // (`workflow`) and the two roleplays are the tracks that render an avatar, so
+  // they run against the GPU deployment. Both legs of the handshake — the ICE
+  // config and the SDP offer — have to agree, so it is picked once here rather
+  // than at each fetch.
+  const vxServer = workflow || roleplay ? VX_SERVER_GPU : VX_SERVER;
   const router = useRouter();
   const [started, setStarted] = useState(false);
   const [connState, setConnState] = useState<ConnState>("connecting");
@@ -638,9 +646,9 @@ export default function InterviewRoom({
     async function fetchIceServers(): Promise<RTCIceServer[] | null> {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const r = await fetch(`${VX_SERVER}/rtc/ice-servers`, {
+          const r = await fetch(`${vxServer}/rtc/ice-servers`, {
             signal: AbortSignal.timeout(5000),
-            // VX_SERVER is often an ngrok free-tier tunnel in dev — ngrok
+            // The voice server is often an ngrok free-tier tunnel in dev — ngrok
             // intercepts real-browser requests (by User-Agent) with an HTML
             // "you're about to visit..." interstitial that has no CORS
             // headers, which the browser then reports as a CORS failure.
@@ -657,7 +665,7 @@ export default function InterviewRoom({
             return servers;
           }
           console.warn(
-            `[ICE] attempt ${attempt + 1} got HTTP ${r.status} from ${VX_SERVER}/rtc/ice-servers`,
+            `[ICE] attempt ${attempt + 1} got HTTP ${r.status} from ${vxServer}/rtc/ice-servers`,
           );
         } catch (e) {
           console.warn(`[ICE] attempt ${attempt + 1} threw:`, e);
@@ -667,7 +675,7 @@ export default function InterviewRoom({
         if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
       }
       console.error(
-        `[ICE] both attempts to fetch ${VX_SERVER}/rtc/ice-servers failed`,
+        `[ICE] both attempts to fetch ${vxServer}/rtc/ice-servers failed`,
       );
       return null;
     }
@@ -890,7 +898,7 @@ export default function InterviewRoom({
 
       let resp: Response;
       try {
-        resp = await fetch(`${VX_SERVER}/rtc/offer/audio`, {
+        resp = await fetch(`${vxServer}/rtc/offer/audio`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -906,7 +914,7 @@ export default function InterviewRoom({
           }),
         });
       } catch (e) {
-        console.error(`[RTC] POST ${VX_SERVER}/rtc/offer/audio threw:`, e);
+        console.error(`[RTC] POST ${vxServer}/rtc/offer/audio threw:`, e);
         if (!cancelled && reconnectAttempts < MAX_RECONNECTS) {
           reconnectAttempts++;
           setConnState("connecting");
@@ -923,7 +931,7 @@ export default function InterviewRoom({
       if (!resp.ok) {
         const body = await resp.text().catch(() => "");
         console.error(
-          `[RTC] POST ${VX_SERVER}/rtc/offer/audio -> HTTP ${resp.status}:`,
+          `[RTC] POST ${vxServer}/rtc/offer/audio -> HTTP ${resp.status}:`,
           body.slice(0, 500),
         );
         setConnState("failed");

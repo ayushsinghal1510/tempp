@@ -64,10 +64,31 @@ export async function saveResumeTex(
   resumeTex: string,
   pdf: Pdf | null,
 ) {
-  // Upload before the row is touched. If R2 refuses, the write below never
-  // happens and the student keeps the previous, consistent document — the
-  // opposite order would leave a row pointing at an object that isn't there.
-  const pdfKey = pdf ? await putResumePdf(id, pdf) : null;
+  // Upload before the row is touched, so the row can never end up pointing at
+  // an object that isn't there.
+  //
+  // A refusal from R2 does NOT abort the save, though. This used to throw, on
+  // the reasoning that the student keeps their previous consistent document —
+  // but that reasoning treats a cache write as if it were the document. It
+  // isn't: `resumeTex` is the source of truth and needs no object storage at
+  // all, so letting an R2 outage discard the text loses the student's actual
+  // work to a failure in a layer that exists only to save 3.7s. Misconfigured
+  // credentials made that every write, silently.
+  //
+  // Falling back to a null key keeps the invariant that matters — no stale
+  // pointer, so the download route can never serve a previous draft — and
+  // ensurePdf() rebuilds and re-caches the PDF on the next read.
+  let pdfKey: string | null = null;
+  if (pdf) {
+    try {
+      pdfKey = await putResumePdf(id, pdf);
+    } catch (err) {
+      console.error(
+        `[resume-studio] PDF cache write failed for ${id}; saving LaTeX without it:`,
+        err,
+      );
+    }
+  }
 
   return prisma.practiceResumeStudio.update({
     where: { id },

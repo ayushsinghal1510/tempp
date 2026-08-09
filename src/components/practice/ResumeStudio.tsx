@@ -20,17 +20,39 @@ function textOf(message: UIMessage): string {
     .join("");
 }
 
-/** The tool's structured result, once it has one. */
+/**
+ * The tool's structured result, once it has one.
+ *
+ * The LAST result in the message, not the first. One turn can now hold several
+ * writeResume calls — a failed compile is handed back to the model to repair,
+ * up to the route's repair budget — and only the final one describes the
+ * document that is actually stored. Reading the first would badge the ordinary
+ * "failed once, then fixed it" turn as a failure and blank the preview pane on
+ * a resume that compiled perfectly well.
+ */
 function toolOutcome(message: UIMessage): { ok: boolean } | null {
+  let outcome: { ok: boolean } | null = null;
   for (const p of message.parts) {
     if (p.type !== "tool-writeResume") continue;
-    if (!("state" in p) || p.state !== "output-available") continue;
+    if (!("state" in p)) continue;
+
+    // A tool that threw lands in "output-error" with no `output` to read. Left
+    // unhandled it returns null here, which reads as "no write was attempted"
+    // — so no badge appears, the preview keeps the previous PDF, and the only
+    // thing the student sees is the model's own belief that it made the edit.
+    // A write that errored is a failed write, and has to say so.
+    if (p.state === "output-error") {
+      outcome = { ok: false };
+      continue;
+    }
+
+    if (p.state !== "output-available") continue;
     const out = (p as { output?: unknown }).output;
     if (out && typeof out === "object" && "ok" in out) {
-      return { ok: Boolean((out as { ok: unknown }).ok) };
+      outcome = { ok: Boolean((out as { ok: unknown }).ok) };
     }
   }
-  return null;
+  return outcome;
 }
 
 /**
@@ -86,6 +108,57 @@ export default function ResumeStudio({
     () => (companyId ? `?company=${encodeURIComponent(companyId)}` : ""),
     [companyId],
   );
+
+  // ── A missing PDF is not the same as a broken document ──────────────
+  //
+  // `initiallyRenderable` comes from `pdfKey !== null`, which answers "is there
+  // a cached PDF" — not "does this resume build". Those come apart whenever a
+  // write was saved without a render: a compile that failed, yes, but equally a
+  // variant whose PDF copy didn't land, or anything written while the compiler
+  // was unavailable. The row then holds a perfectly good document that the page
+  // refuses to display, and the student is told their draft doesn't compile
+  // while the Download button sits disabled above it.
+  //
+  // ensurePdf() on the server already knows the difference — it recompiles a
+  // cold cache and only gives up on LaTeX that genuinely won't build. So ask
+  // it: 200 means renderable, 409 means it really is broken. Deliberately a
+  // request from the client rather than work in the page render, which must
+  // never block on a compile.
+  const [probed, setProbed] = useState(false);
+
+  // A ref alongside the state, for the same reason `kickedOff` below is one:
+  // React's double-invoked development effects fire this twice before the
+  // setProbed from the first pass has landed, and each pass is a request that
+  // makes the server compile the document. The state still drives rendering;
+  // this only guards the firing.
+  const probeStarted = useRef(false);
+
+  useEffect(() => {
+    if (initiallyRenderable || probed || probeStarted.current) return;
+    probeStarted.current = true;
+    let cancelled = false;
+    const url = `/api/practice/resume-studio/pdf${query}${query ? "&" : "?"}probe=1`;
+    fetch(url)
+      .then((r) => {
+        if (cancelled) return;
+        setProbed(true);
+        // Also bumps `version`, so the iframe mounts against a fresh URL rather
+        // than reusing whatever the browser cached for the un-probed one.
+        if (r.ok) {
+          setRenderable(true);
+          setVersion((v) => v + 1);
+        }
+      })
+      .catch(() => {
+        // Network failure tells us nothing about the document — leave the
+        // pane as it is rather than reporting a compile problem that may
+        // not exist.
+        if (!cancelled) setProbed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initiallyRenderable, probed, query]);
 
   const { messages, sendMessage, status } = useChat({
     messages: initialMessages,
@@ -177,7 +250,7 @@ export default function ResumeStudio({
             </div>
           )}
 
-          {messages.map((m) => {
+          {messages.map((m, i) => {
             const text = textOf(m);
             const changed = wroteResume(m);
             const failed = failedToCompile(m);
@@ -188,7 +261,12 @@ export default function ResumeStudio({
 
             return (
               <div
-                key={m.id}
+                // Falls back to the index because assistant messages can come
+                // back from the stream with an empty id, and a transcript with
+                // two of those is two children keyed "" — React then warns and
+                // is free to duplicate or drop one. Position is a safe key
+                // here: this list is append-only and never reordered.
+                key={m.id || `msg-${i}`}
                 className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
@@ -288,6 +366,15 @@ export default function ResumeStudio({
               className="h-full w-full border-0"
               onError={() => setRenderable(false)}
             />
+          ) : !probed && !initiallyRenderable ? (
+            // The probe above is still deciding whether this document builds.
+            // Claiming it doesn't while we don't yet know is the wrong default:
+            // the common case here is a cold cache that recompiles fine, and
+            // showing a repair message for it sends the student to ask the
+            // agent to fix a resume that was never broken.
+            <div className="grid h-full place-items-center p-8 text-center">
+              <p className="text-sm text-muted">Rendering your resume…</p>
+            </div>
           ) : (
             <div className="grid h-full place-items-center p-8 text-center">
               <div>
