@@ -59,8 +59,10 @@ export const CHERYL_ACTIONS = [
 export type CherylAction = (typeof CHERYL_ACTIONS)[number];
 
 /**
- * Spoken first, before the trainee says anything. He opens mid-complaint with
- * the shirt already held up at the counter.
+ * NO LONGER SPOKEN — see MUTHU_GREETING for the same change on `mm`. The call
+ * opens silent and the trainee speaks first; `cherylCustoms.ts` starts on
+ * `ask_for_input`. Kept for `scripts/seed-pr.ts`, which writes it into the
+ * read-only copy of the roleplay the admin reads.
  */
 export const CHERYL_GREETING =
   "Excuse me. I need to speak to someone about this shirt. I bought it here last week — and look at this. One of the buttons is already missing. This is clearly a manufacturing defect. I want a refund. I paid good money for this, and it is not acceptable.";

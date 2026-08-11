@@ -33,7 +33,6 @@ import {
 import { PRACTICE_WEBHOOK_URL } from "./practiceCustoms";
 import {
   MUTHU_DEBRIEF_PROMPT,
-  MUTHU_GREETING,
   MUTHU_OPENING_FRAME,
   MUTHU_PROMPT,
   type MuthuFrame,
@@ -91,19 +90,17 @@ You are speaking out loud, on a live call, to an officer named ${userName}. They
     agent_id: {
       workflow: {
         nodes: {
-          // No `frame` here. Both lipsync slots are initialised to the idle
-          // face at avatar load, and the idle face IS the angry one (`main`),
-          // so Muthu is already shouting on the greeting without being told.
-          // Sending it would only re-set the speaking slot to what it already is.
-          greeting: {
-            type: "out",
-            parameters: {
-              out_dict: { speak: MUTHU_GREETING },
-              interruption_type: "no",
-              interruption_metadata: {},
-            },
-            next: "ask_for_input",
-          },
+          // There is no greeting node. Mr Muthu opens SILENT: the graph starts
+          // on `ask_for_input`, so the officer has to speak first.
+          //
+          // Removed rather than set to an empty `speak` — an `out` node still
+          // runs the TTS, and handing a text-to-speech engine "" is an error
+          // case at the worst possible moment in the call.
+          //
+          // He still opens angry without saying anything. Both lipsync slots
+          // are initialised to the idle face at avatar load and the idle face
+          // IS the angry one (`main`), so the face was never the greeting's
+          // job — which is why removing it costs nothing but the words.
           ask_for_input: {
             type: "input",
             parameters: { input_variables: { user_input: "str" } },
@@ -292,7 +289,7 @@ You are speaking out loud, on a live call, to an officer named ${userName}. They
           summary: { type: "str" },
           node_type: { type: "str" },
         },
-        start_node: "greeting",
+        start_node: "ask_for_input",
       },
       "webhook-url": PRACTICE_WEBHOOK_URL,
     },

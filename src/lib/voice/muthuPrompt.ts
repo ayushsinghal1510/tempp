@@ -47,9 +47,13 @@ export type MuthuFrame = (typeof MUTHU_FRAMES)[number];
 export const MUTHU_OPENING_FRAME: MuthuFrame = "main";
 
 /**
- * Spoken first, before the officer says anything. He does not wait to be
- * greeted — he opens mid-grievance with the bills already in his hand, which
- * is what puts the officer on the back foot from turn one.
+ * NO LONGER SPOKEN. The call now opens in silence and the officer has to start
+ * it — `muthuCustoms.ts` has no greeting node and begins on `ask_for_input`.
+ *
+ * Kept because `scripts/seed-mm.ts` writes it into the read-only copy of the
+ * roleplay the admin reads, and because it is still the shape of his first
+ * turn: he does not wait to be greeted, he answers mid-grievance with the bills
+ * already in his hand.
  */
 export const MUTHU_GREETING =
   "See here! I'm showing you all these bills, look! Nine hundred dollars they give me, nine hundred! How to survive like this?! My mother is bedridden, my children eating bread every day! You tell me now, how?!";
