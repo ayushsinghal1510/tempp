@@ -165,7 +165,10 @@
       "Bash(echo \"lint exit: $?\")",
       "PowerShell(New-Item *)",
       "PowerShell(& \"$env:USERPROFILE\\\\.local\\\\bin\\\\tectonic.exe\" --version)",
-      "Bash(perl -0pi -e 's/await saveResumeTex\\\\\\(studio\\\\.id,/await saveResumeTex\\(studioId,/g; s/compile failed for \\\\$\\\\{studio\\\\.id\\\\}/compile failed for \\\\${studioId}/g; s/\"\\\\[resume-studio\\\\] writeResume failed for\", studio\\\\.id, err/\"[resume-studio] writeResume failed for\", studioId, err/g' src/app/api/practice/resume-studio/chat/route.ts)"
+      "Bash(perl -0pi -e 's/await saveResumeTex\\\\\\(studio\\\\.id,/await saveResumeTex\\(studioId,/g; s/compile failed for \\\\$\\\\{studio\\\\.id\\\\}/compile failed for \\\\${studioId}/g; s/\"\\\\[resume-studio\\\\] writeResume failed for\", studio\\\\.id, err/\"[resume-studio] writeResume failed for\", studioId, err/g' src/app/api/practice/resume-studio/chat/route.ts)",
+      "Bash(npx pm2 *)",
+      "Bash(npm init *)",
+      "Bash(echo \"tsc exit: $?\")"
     ]
   }
 }

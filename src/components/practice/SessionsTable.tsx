@@ -21,8 +21,11 @@ export type SessionRow = {
   completed: boolean;
 };
 
+// A round with no duration is one whose completion write never landed. That is
+// a gap in the record, not a session that is still running, so it reads as a
+// missing value like every other unknown in this table rather than as a status.
 function formatDuration(seconds: number | null): string {
-  if (seconds == null) return "In progress";
+  if (seconds == null) return "—";
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
@@ -62,9 +65,6 @@ export default function SessionsTable({
   const scoring = topics.length > 0;
   const [query, setQuery] = useState("");
   const [companyFilter, setCompanyFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "completed" | "in_progress"
-  >("all");
 
   const companyOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -79,15 +79,13 @@ export default function SessionsTable({
     return sessions.filter((s) => {
       if (companyFilter !== "all" && s.companyId !== companyFilter)
         return false;
-      if (statusFilter === "completed" && !s.completed) return false;
-      if (statusFilter === "in_progress" && s.completed) return false;
       if (!q) return true;
       return (
         s.companyName.toLowerCase().includes(q) ||
         s.label.toLowerCase().includes(q)
       );
     });
-  }, [sessions, query, companyFilter, statusFilter]);
+  }, [sessions, query, companyFilter]);
 
   return (
     <div className="space-y-3">
@@ -114,19 +112,6 @@ export default function SessionsTable({
             ))}
           </Select>
         )}
-        <Select
-          size="sm"
-          value={statusFilter}
-          onChange={(e) =>
-            setStatusFilter(e.target.value as "all" | "completed" | "in_progress")
-          }
-          className="w-auto min-w-[9.5rem]"
-          aria-label="Filter by status"
-        >
-          <option value="all">All statuses</option>
-          <option value="completed">Completed</option>
-          <option value="in_progress">In progress</option>
-        </Select>
         <span className="text-xs text-muted">
           {filtered.length} of {sessions.length}
         </span>

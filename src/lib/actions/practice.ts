@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, setSessionCookie } from "@/lib/auth/session";
 import { getAccessibleCompany, getResumeChatFor } from "@/lib/practice/access";
 import { joinGroupByCode } from "@/lib/practice/joinGroup";
 import { researchCompany } from "@/lib/research/companyResearch";
@@ -242,5 +242,39 @@ export async function completePracticeRound(
     }
   }
 
+  return { ok: true };
+}
+
+/**
+ * Rename yourself.
+ *
+ * The display name is not decoration: it is passed to the voice backend as the
+ * candidate name, so it is what Mr Muthu and Mr Cheryl actually call the person
+ * on the other side of the roleplay. A seeded account arrives as "Sample
+ * Officer" or "Sample Trainee", and being addressed by a placeholder for ten
+ * minutes is the thing that breaks the illusion the roleplay depends on.
+ *
+ * The name is also a JWT claim, so the row is not the only copy — the cookie is
+ * re-signed here too. Without that the header would keep showing the old name
+ * until the session expired seven days later.
+ */
+export async function renameSelf(
+  _prev: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  const user = await requireUser(
+    ["practice", "practice_admin"],
+    "/practice/login",
+  );
+
+  const name = String(formData.get("name") ?? "").replace(/\s+/g, " ").trim();
+  if (!name) return { error: "Enter a name." };
+  if (name.length > 60) return { error: "Keep it under 60 characters." };
+
+  await prisma.user.update({ where: { id: user.id }, data: { name } });
+  await setSessionCookie({ ...user, name });
+
+  updateTag(userTag(user.id));
+  revalidatePath("/practice", "layout");
   return { ok: true };
 }

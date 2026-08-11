@@ -2,6 +2,7 @@ import type { Tenant } from "@prisma/client";
 import LogoutButton from "@/components/LogoutButton";
 import ThemeToggle from "@/components/ThemeToggle";
 import { tenantConfig } from "@/lib/tenants/config";
+import DisplayNameForm from "./DisplayNameForm";
 import PracticeNavTabs from "./PracticeNavTabs";
 import TourTrigger from "./TourTrigger";
 import GuidedTour from "./GuidedTour";
@@ -76,7 +77,7 @@ export default function PracticeHeader({
             <span className="truncate font-semibold text-ink lg:hidden">{label}</span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <span className="hidden text-sm text-muted sm:inline">{userName}</span>
+            <DisplayNameForm userName={userName} />
             {/* The tour walks through scored charts, which cus does not have. */}
             {features.scoring && <TourTrigger />}
             <ThemeToggle />
