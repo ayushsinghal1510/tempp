@@ -26,7 +26,7 @@ your own section's login if you land somewhere you don't belong.
 | Page | Who it's for |
 |---|---|
 | `/login` | platform staff — **currently disabled**, see below |
-| `/practice/login` | practice-track learners (all tenants, `mm`/`pr` included) |
+| `/practice/login` | practice-track learners (all tenants, `mm`/`pr`/`vps` included) |
 | `/educator/login` | educators / workspace admins |
 | `/nimc/login` | admissions counsellors |
 
@@ -151,6 +151,49 @@ auto-enrols.
 
 ---
 
+## vps — virtual patient simulation (Mr Nair)
+
+Tenant `vps`, org **VPS Clinical Training**.
+
+| Email | Name | Role | Sign in at |
+|---|---|---|---|
+| `admin@vps.com` | VPS Admin | `practice_admin` | `/educator/login` |
+| `user@vps.com` | Sample Trainee | `practice` | `/practice/login` |
+
+Seeded by `npx tsx scripts/seed-vps.ts` (idempotent — safe to re-run).
+
+Structurally the second `pr`: one fixed compiled-in simulation, scene actions,
+a running score and an out-of-twenty debrief across four dimensions. A
+healthcare trainee consults Mr Nair, an elderly diabetic man who deflects about
+a sore on his foot and is carrying a fear he will not name unless he is given
+room. The prompt lives in `src/lib/voice/vpsPrompt.ts`; re-run the seed after
+editing it to refresh the admin's read-only copy.
+
+**The avatar is a body, not a face.** Where `mm` and `pr` have an angry clip and
+a settled one, this patient has three POSES — resting, right hand raised, left
+hand raised — so `frame` tracks where his body is and never how he feels. Ask
+him to hold up a hand and he does, and keeps it there until told to lower it or
+to switch. The room shows the current pose as a chip and the mood banner is
+switched off for this tenant, since a raised hand is not a mood.
+
+It is also the only track that sends `faces` as a **manifest object** rather
+than a bare list, which is what lets it carry bridge clips: raising a hand plays
+a transition, lowering it hard-cuts (transitions are one-directional and only
+the two `main→hand` clips exist). Run `npx tsx scripts/verify-vps-faces.ts`
+after touching the clips — every way that pairing can break fails silently as a
+hard cut or a missing avatar.
+
+**Not the same thing as `nim`,** which also simulates a patient. `nim` is a
+six-topic rubric scored every turn across many educator-authored scenarios;
+this is one fixed encounter assessed once at the end. A `@vps.com` account
+will not see scenario authoring, and a `@nim.com` account will never meet
+Mr Nair.
+
+Self-signup at `/practice/signup` works with a `@vps.com` address and
+auto-enrols.
+
+---
+
 ## cus — custom deployment
 
 Tenant `cus`, org **Custom Deployment**.
@@ -223,6 +266,7 @@ npx tsx scripts/seed-jer.ts       # jer educator, idempotent
 npx tsx scripts/seed-nimc.ts      # nimc, idempotent
 npx tsx scripts/seed-mm.ts        # mm, idempotent
 npx tsx scripts/seed-pr.ts        # pr, idempotent
+npx tsx scripts/seed-vps.ts       # vps, idempotent
 ```
 
 All five are upsert-only and safe against the live database.
@@ -240,7 +284,7 @@ accounts intact**. They can still sign in, and their dashboard is empty — whic
 is why "login works" is not sufficient evidence that a restore succeeded.
 
 The seed scripts do not cover this: each re-enrols only the sample user it
-created itself, never people who signed up afterwards. On `cus`/`mm`/`pr` the
+created itself, never people who signed up afterwards. On `cus`/`mm`/`pr`/`vps` the
 membership is load-bearing — `isOrgMember` in `src/lib/practice/access.ts` is
 the only path to the org's published workflow.
 

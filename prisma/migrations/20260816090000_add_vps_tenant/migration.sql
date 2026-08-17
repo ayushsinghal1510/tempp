@@ -1,0 +1,24 @@
+-- The `vps` tenant: virtual patient simulation.
+--
+-- A healthcare trainee consults Mr Nair, an elderly diabetic man who deflects
+-- and is carrying a fear he will not name. Structurally the third `mm` and the
+-- second `pr`: same org/user/PracticeCompany-of-kind-`workflow`/PracticeRound/
+-- PracticeTurn plumbing, same compiled-in prompt, same two-face avatar, same
+-- scene actions and running score.
+--
+-- ONE STATEMENT, NO COLUMNS. Every column this track writes already exists,
+-- added by 20260731140000_add_pr_tenant: practice_turns.actions and
+-- .running_score, practice_rounds.debrief_total and .outcome. vps stores the
+-- same shapes with the same meanings — a /20 total off a four-dimension rubric
+-- and a "pass"/"retry"/"fail" outcome off the running score's status prefix —
+-- so reusing them is correct rather than merely convenient, and a parallel set
+-- of vps_* columns would fork every reader in src/lib/practice/ for no gain.
+--
+-- The ADD VALUE is alone in the file and nothing below uses it. Postgres allows
+-- adding an enum value inside a transaction block (which is how
+-- `prisma migrate deploy` runs each file) only if the new value is not USED in
+-- the same transaction — scripts/seed-vps.ts writes 'vps' rows afterwards, on
+-- its own connection. Same constraint the cus / nimc / mm / pr migrations
+-- documented.
+
+ALTER TYPE "Tenant" ADD VALUE 'vps';

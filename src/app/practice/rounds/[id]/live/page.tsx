@@ -38,14 +38,24 @@ export default async function PracticeInterviewLivePage({
     // two apart — the tenant does. On mm the row's greeting/prompt are seeded
     // copies for the admin to read; the customs the call actually runs on come
     // from muthuPrompt.ts, which is why nothing from the row is passed here.
+    // Same on pr (cherylPrompt.ts) and vps (vpsPrompt.ts).
     if (features.roleplay) {
       return (
         <InterviewRoom
           variant="practice"
           roundId={round.id}
-          // The tenant, not a boolean: `features.roleplay` is true on both mm
-          // and pr, and this is what picks Mr Muthu or Mr Cheryl.
-          roleplay={user.tenant === "pr" ? "pr" : "mm"}
+          // The tenant, not a boolean: `features.roleplay` is true on mm, pr
+          // and vps, and this is what picks Mr Muthu, Mr Cheryl or Mr Nair.
+          //
+          // Passed straight through rather than mapped, with `mm` as the
+          // fallback the union needs. The cast is doing real work: `features`
+          // has already established this is one of the three, but it cannot
+          // narrow `user.tenant` for the type checker. Adding a fourth roleplay
+          // tenant and forgetting an entry in the room's ROLEPLAYS map is
+          // caught there, at the lookup, not silently defaulted here.
+          roleplay={
+            user.tenant === "pr" || user.tenant === "vps" ? user.tenant : "mm"
+          }
           candidateName={user.name}
           kindLabel={round.company.companyName}
           backHref="/practice"

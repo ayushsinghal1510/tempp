@@ -23,6 +23,19 @@
 //         it adds is physical scene actions (he hands over a receipt, passes
 //         the shirt, raises his phone) that the room renders on screen, and a
 //         running pass/retry/fail score the trainee can watch move.
+//   vps → virtual patient simulation. A healthcare trainee consults a fixed
+//         elderly diabetic patient (Mr Nair) who deflects, minimises, and is
+//         carrying a fear he will not name unless he is given room. The third
+//         tenant on the `mm` skeleton and structurally a copy of `pr` — same
+//         two-face avatar, same scene actions, same running score, same
+//         out-of-twenty debrief.
+//
+//         WHY NOT `nim`, WHICH ALREADY SIMULATES A PATIENT: `nim` is a rubric
+//         applied to many educator-authored encounters, scored every turn. This
+//         is one fixed encounter whose difficulty IS the product, assessed once
+//         at the end. Putting it on `nim` would have meant either an authoring
+//         form over a scenario nobody may edit, or a six-axis radar over a
+//         single sitting — see the `mm` note below for the same argument.
 //   mm → conflict-handling roleplay. A user faces a fixed hostile client (Mr
 //         Muthu, an aggrieved aid applicant) rendered as a two-faced avatar
 //         that visibly switches between angry and calm as the user manages
@@ -383,6 +396,61 @@ export const TENANTS: Record<Tenant, TenantConfig> = {
       unitTitle: "Roleplay",
       sessionNoun: "session",
       agentNoun: "Mr Cheryl",
+    },
+  },
+  vps: {
+    key: "vps",
+    label: "Virtual patient simulation",
+    domains: ["vps.com"],
+    // "roleplay", not "clinical". `track` says which SHAPE the session is, and
+    // this one is a fixed compiled-in simulation with an avatar — the same
+    // shape as mm and pr. `nim` owns "clinical", which means the authored-
+    // scenario, per-turn-rubric shape. Subject matter is not what this field
+    // discriminates; nothing branches on it to decide medical-ness.
+    track: "roleplay",
+    // Empty for exactly the reason mm and pr are. This encounter IS assessed —
+    // out of twenty, across four dimensions — but once at the end, in prose.
+    // `topics` drives the radar and the per-turn timelines, and a single
+    // sitting has nothing per-turn to put in them.
+    //
+    // Worth stating plainly because it is the one place this tenant invites a
+    // wrong guess: CLINICAL_TOPICS above would slot straight in here and the
+    // whole analytics layer would light up. It must not. Those six topics are
+    // scored by nim's graph on every turn; vps's graph returns speak/frame/
+    // actions/score and no topic dicts at all, so borrowing the rubric would
+    // render six axes of zeroes that look like a student who scored nothing.
+    topics: [],
+    features: {
+      company: false,
+      resume: false,
+      research: false,
+      // False despite the subject matter. `scenario` is nim's educator-authoring
+      // feature; this patient is compiled into src/lib/voice/vpsPrompt.ts and is
+      // not something an educator may edit.
+      scenario: false,
+      // Same pair as mm and pr: `workflow` false keeps the authoring form and
+      // saveWorkflow off this tenant, `roleplay` true is what routes the live
+      // page to buildVpsCustoms instead of buildWorkflowCustoms.
+      workflow: false,
+      roleplay: true,
+      // Gates the six-topic rubric surfaces, none of which this track produces
+      // data for. The out-of-twenty debrief renders through the roleplay
+      // debrief panel instead.
+      scoring: false,
+      assignments: false,
+      autoEnroll: true,
+      courseField: false,
+    },
+    funnelStages: ["started", "completed"],
+    copy: {
+      unitSingular: "simulation",
+      unitPlural: "simulations",
+      unitTitle: "Simulation",
+      sessionNoun: "consultation",
+      // What the transcript labels the AI side. Not "Patient" — nim uses that
+      // for a role that changes every scenario, whereas this is always the same
+      // man and the trainee is meant to remember his name.
+      agentNoun: "Mr Nair",
     },
   },
 };

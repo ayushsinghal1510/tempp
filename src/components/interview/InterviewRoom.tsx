@@ -25,6 +25,7 @@ import {
 } from "@/lib/voice/workflowCustoms";
 import { buildMuthuCustoms, MUTHU_NAME } from "@/lib/voice/muthuCustoms";
 import { buildCherylCustoms, CHERYL_NAME } from "@/lib/voice/cherylCustoms";
+import { buildVpsCustoms, VPS_NAME } from "@/lib/voice/vpsCustoms";
 import {
   OUTCOME_LABEL,
   OUTCOME_TONE,
@@ -148,6 +149,46 @@ function RichText({ text }: { text: string }) {
   );
 }
 
+/**
+ * The fixed roleplays, and the two things the room needs from each: whose name
+ * goes on every label, and which builder produces the customs.
+ *
+ * A map rather than the ternary chain this replaced. With two roleplays the
+ * chain was readable; the third arm pushed it to five levels of nesting sharing
+ * a fallthrough with `workflow` and `scenario`, where a misplaced branch reads
+ * as valid code and sends a trainee into the wrong simulation. Adding a fourth
+ * is now one entry here plus one key on the prop's union.
+ *
+ * Keyed by tenant, because the tenant key is the only thing that says who is on
+ * the other side — `features.roleplay` is true on all three.
+ */
+const ROLEPLAYS = {
+  mm: { name: MUTHU_NAME, build: buildMuthuCustoms, moodFrames: true },
+  pr: { name: CHERYL_NAME, build: buildCherylCustoms, moodFrames: true },
+  // moodFrames FALSE, and it is the whole reason this flag exists. On mm and pr
+  // the avatar's two clips are an angry face and a settled one, so a `frame`
+  // change genuinely is a mood change and the banner below reports it. Mr Nair's
+  // clips are a resting pose and two raised hands — his frame changes because a
+  // trainee asked him to lift an arm, and nothing about it says how he feels.
+  // With the banner on, every hand raise would announce "you've lost him — Mr
+  // Nair is agitated again" over a patient who is simply doing as he was told.
+  vps: { name: VPS_NAME, build: buildVpsCustoms, moodFrames: false },
+} as const;
+
+/**
+ * How the `vps` poses read on screen. Keyed by the same strings VPS_FACES
+ * labels its clips with — that pairing is the contract, so a pose missing here
+ * renders no chip rather than a raw "right-hand".
+ *
+ * `main` is deliberately absent: "sitting normally" is the absence of an
+ * instruction, and a chip announcing it would be on screen for most of the
+ * session saying nothing.
+ */
+const POSE_LABELS: Record<string, string> = {
+  "right-hand": "Right hand raised",
+  "left-hand": "Left hand raised",
+};
+
 /** One exchange as stored by the webhook: what the student said, what came back. */
 type LiveTurn = {
   turnNumber: number;
@@ -190,6 +231,25 @@ const SCENE_PROPS: Record<
     recording: true,
   },
   "get-details": { label: "Escalation form", form: true },
+
+  // `vps` — what Mr Nair puts on the desk. Placeholder imagery on the same
+  // terms as Mr Cheryl's above: external URLs, so a missing asset is obvious.
+  //
+  // Only two of that track's five actions appear here. `shows-foot` is a body
+  // and this product is not going to render one; `companion-cuts-in` is a
+  // speech event the trainee has already heard; `turn-away` coincides with the
+  // session ending, which the room announces itself. All three fall out at
+  // `visibleProps` exactly as `turn-away` already did — see the note there.
+  "medication-bag": {
+    label: "His tablets",
+    image:
+      "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&q=80",
+  },
+  "report-sheet": {
+    label: "Blood test report",
+    image:
+      "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80",
+  },
 };
 
 /**
@@ -299,12 +359,16 @@ export default function InterviewRoom({
    * and `scenario`.
    *
    * A discriminator rather than the boolean it started as: `features.roleplay`
-   * is now true on two tenants, and the tenant key is the only thing that says
-   * whether the person on the other side is Mr Muthu or Mr Cheryl. Every
-   * truthiness check against this prop still reads as "is this a roleplay",
-   * which is why the branches below did not have to change.
+   * is now true on three tenants, and the tenant key is the only thing that says
+   * whether the person on the other side is Mr Muthu, Mr Cheryl or Mr Nair.
+   * Every truthiness check against this prop still reads as "is this a
+   * roleplay", which is why the branches below did not have to change.
+   *
+   * Kept as a literal union rather than widened to `Tenant`: it is what makes
+   * the ROLEPLAYS lookup above exhaustive, so adding a roleplay tenant without
+   * a builder is a type error rather than a crash at connect time.
    */
-  roleplay?: "mm" | "pr";
+  roleplay?: keyof typeof ROLEPLAYS;
   kindLabel: string;
   backHref: string;
   /** "practice" runs the generic, deliberately-scored practice workflow instead. */
@@ -321,9 +385,7 @@ export default function InterviewRoom({
   const interviewerName =
     variant === "practice"
       ? roleplay
-        ? roleplay === "pr"
-          ? CHERYL_NAME
-          : MUTHU_NAME
+        ? ROLEPLAYS[roleplay].name
         : (scenario?.patientName ?? drive?.companyName ?? "Practice Interviewer")
       : company!.name;
   // Which voice backend this session talks to. Same branch as the
@@ -333,6 +395,18 @@ export default function InterviewRoom({
   // config and the SDP offer — have to agree, so it is picked once here rather
   // than at each fetch.
   const vxServer = workflow || roleplay ? VX_SERVER_GPU : VX_SERVER;
+  // The AI pane's shape, which is a property of the AVATAR CLIPS rather than of
+  // the room. Every other track's clips are landscape and fill the default
+  // 72x56 box; vps's were shot portrait, so in that box `object-cover` crops
+  // the sides — which on a standing figure means cropping the very hands the
+  // exercise is about.
+  //
+  // Height-plus-aspect rather than a width/height pair so the box is described
+  // by the ratio it has to match, not by two numbers that silently stop
+  // agreeing if either is edited. The candidate pane is deliberately untouched:
+  // that is a webcam, and webcams are landscape.
+  const aiPaneClass =
+    roleplay === "vps" ? "h-[28rem] aspect-[9/16]" : "h-56 w-72";
   const router = useRouter();
   const [started, setStarted] = useState(false);
   const [connState, setConnState] = useState<ConnState>("connecting");
@@ -369,6 +443,11 @@ export default function InterviewRoom({
   // `pr` only. The running score as last returned ("retry_5"), and every scene
   // action fired so far this session, in the order they happened.
   const [runningScore, setRunningScore] = useState<string | null>(null);
+  // `vps` only — the pose the patient is currently holding, so the trainee can
+  // see that an instruction actually landed. State rather than the existing
+  // lastFrameRef because this one is rendered: a ref would update silently and
+  // the chip would sit on whatever pose it happened to mount with.
+  const [poseFrame, setPoseFrame] = useState<string | null>(null);
   const [sceneActions, setSceneActions] = useState<string[]>([]);
   const [formDone, setFormDone] = useState(false);
 
@@ -460,26 +539,43 @@ export default function InterviewRoom({
           // at once, and only the LAST transition in that batch is still true —
           // announcing every one of them would flash two contradictory banners
           // for a mood the officer already moved past.
+          //
+          // Gated on moodFrames: only mm and pr have clips whose change MEANS a
+          // mood change. vps's frames are body poses, so a transition there is
+          // the patient lifting an arm he was asked to lift and there is nothing
+          // to announce. See the note on ROLEPLAYS.
           let shift: MoodShift | null = null;
-          for (const turn of data.turns) {
-            if (!turn.frame) continue;
-            const previous = lastFrameRef.current;
-            lastFrameRef.current = turn.frame;
-            if (!previous || previous === turn.frame) continue;
-            shift =
-              turn.frame === "normal"
-                ? {
-                    id: turn.turnNumber,
-                    tone: "calm",
-                    text: `Good job — ${interviewerName} is settling down.`,
-                  }
-                : {
-                    id: turn.turnNumber,
-                    tone: "angry",
-                    text: `You've lost him — ${interviewerName} is agitated again.`,
-                  };
+          if (ROLEPLAYS[roleplay].moodFrames) {
+            for (const turn of data.turns) {
+              if (!turn.frame) continue;
+              const previous = lastFrameRef.current;
+              lastFrameRef.current = turn.frame;
+              if (!previous || previous === turn.frame) continue;
+              shift =
+                turn.frame === "normal"
+                  ? {
+                      id: turn.turnNumber,
+                      tone: "calm",
+                      text: `Good job — ${interviewerName} is settling down.`,
+                    }
+                  : {
+                      id: turn.turnNumber,
+                      tone: "angry",
+                      text: `You've lost him — ${interviewerName} is agitated again.`,
+                    };
+            }
           }
           if (shift) setMoodShift(shift);
+
+          // The pose half of the same walk, for the tracks whose frames are
+          // bodies rather than moods. Last-wins: only the newest pose is the one
+          // he is still holding.
+          if (!ROLEPLAYS[roleplay].moodFrames) {
+            const latestFrame = [...data.turns]
+              .reverse()
+              .find((t) => t.frame)?.frame;
+            if (latestFrame) setPoseFrame(latestFrame);
+          }
 
           // The running score and the scene actions, both `pr` only and both
           // read off the same delta. Last-wins for the score (it is a running
@@ -848,11 +944,9 @@ export default function InterviewRoom({
       const baseCustoms =
         variant !== "practice"
           ? buildCustoms(company!, candidateName)
-          : roleplay === "pr"
-            ? buildCherylCustoms(candidateName)
-            : roleplay === "mm"
-              ? buildMuthuCustoms(candidateName)
-              : workflow
+          : roleplay
+            ? ROLEPLAYS[roleplay].build(candidateName)
+            : workflow
                 ? buildWorkflowCustoms(candidateName, workflow)
                 : scenario
                   ? buildClinicalCustoms(candidateName, scenario)
@@ -1579,8 +1673,25 @@ export default function InterviewRoom({
             Pinned to the left rather than floated over the middle: unlike the
             mood banner these persist for the rest of the session, so they must
             not sit on top of the video. */}
-        {roleplay === "pr" && (parsedRunningScore || visibleProps.length > 0) && (
+        {/* Both roleplays that carry a running score and scene props — `pr` and
+            `vps`. Not `mm`, whose graph returns neither, so the panel would be
+            an empty box pinned over his face for the whole session. */}
+        {(roleplay === "pr" || roleplay === "vps") &&
+          (parsedRunningScore ||
+            visibleProps.length > 0 ||
+            (poseFrame && POSE_LABELS[poseFrame])) && (
           <aside className="absolute left-4 top-4 z-20 w-56 space-y-3">
+            {/* What the patient is currently doing with his hands. Above the
+                score on purpose: it is the thing that changes in response to
+                what the trainee just said, so it is what they look for. */}
+            {poseFrame && POSE_LABELS[poseFrame] && (
+              <div className="flex items-center gap-2 rounded-xl border border-line bg-card p-3 shadow-lg">
+                <span className="size-2 shrink-0 rounded-full bg-brand" />
+                <span className="text-sm font-medium text-ink">
+                  {POSE_LABELS[poseFrame]}
+                </span>
+              </div>
+            )}
             {parsedRunningScore && (
               <div className="rounded-xl border border-line bg-card p-3 shadow-lg">
                 <div className="text-xs uppercase tracking-wide text-muted">
@@ -1775,7 +1886,7 @@ export default function InterviewRoom({
         {/* interviewer */}
         <div className="flex flex-col items-center gap-3">
           <div
-            className={`grid h-56 w-72 place-items-center overflow-hidden rounded-2xl border bg-card transition ${
+            className={`grid ${aiPaneClass} place-items-center overflow-hidden rounded-2xl border bg-card transition ${
               aiSpeaking ? "border-brand" : "border-line"
             }`}
           >

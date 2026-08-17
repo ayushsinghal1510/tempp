@@ -95,6 +95,7 @@ enum Tenant {
   nimc
   mm
   pr
+  vps
 }
 
 // PracticeCompany does triple duty across the tenants: an employer to

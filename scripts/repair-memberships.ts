@@ -12,7 +12,7 @@
 // The seed scripts do not cover this: each one re-enrols only the sample user
 // it created itself, never the real people who signed up afterwards.
 //
-// It matters most on the autoEnroll tenants (cus/mm/pr). There, access to the
+// It matters most on the autoEnroll tenants (cus/mm/pr/vps). There, access to the
 // org's published workflow comes ONLY from a PracticeMember row — see
 // isOrgMember in src/lib/practice/access.ts — so a missing membership is the
 // difference between seeing the product and seeing nothing.
@@ -34,7 +34,7 @@ const prisma = new PrismaClient();
 // Kept in step with features.autoEnroll in src/lib/tenants/config.ts. Listed
 // literally rather than derived, because importing that config would drag the
 // whole "@/..." alias chain into a standalone script for one boolean.
-const AUTO_ENROL_TENANTS: Tenant[] = ["cus", "mm", "pr"];
+const AUTO_ENROL_TENANTS: Tenant[] = ["cus", "mm", "pr", "vps"];
 
 async function main() {
   const fix = process.argv.includes("--fix");
