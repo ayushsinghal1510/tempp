@@ -44,6 +44,55 @@ type ConnState = "connecting" | "connected" | "failed";
 type AiState = "waiting" | "listening" | "thinking" | "speaking";
 
 /**
+ * How the room lays the two video panes out.
+ *
+ *   split — both panes side by side, sharing the stage equally.
+ *   focus — the AI fills the stage, you shrink to a corner tile.
+ *   ai    — the AI alone, nothing else on screen.
+ *   you   — you alone, for checking your own framing and lighting.
+ *
+ * Crucially this only ever changes CLASSES. Both <video> elements stay mounted
+ * in every mode, because each one's `srcObject` is assigned once when the call
+ * connects and unmounting the element would drop the stream for good — and
+ * because the recording canvas composites straight from these two elements, so
+ * a pane that stopped rendering would leave a frozen half in the saved video.
+ * That is also why the off-stage pane is hidden with `opacity-0` and not with
+ * `hidden`: `display: none` lets the browser stop decoding frames.
+ */
+type ViewMode = "split" | "focus" | "ai" | "you";
+
+const VIEW_MODES: { value: ViewMode; label: string }[] = [
+  { value: "split", label: "Side by side" },
+  { value: "focus", label: "AI large, you in the corner" },
+  { value: "ai", label: "AI only" },
+  { value: "you", label: "You only" },
+];
+
+const VIEW_MODE_KEY = "prepai.interviewRoom.viewMode";
+
+function readSavedViewMode(): ViewMode {
+  if (typeof window === "undefined") return "split";
+  try {
+    const saved = window.localStorage.getItem(VIEW_MODE_KEY);
+    return VIEW_MODES.some((m) => m.value === saved)
+      ? (saved as ViewMode)
+      : "split";
+  } catch {
+    // Storage disabled (private mode, blocked cookies) — the default stands.
+    return "split";
+  }
+}
+
+/** Full stage. */
+const PANE_ON =
+  "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border";
+/** Corner tile — the picture-in-picture position in `focus`. */
+const PANE_PIP =
+  "absolute bottom-4 right-4 z-10 aspect-video w-36 overflow-hidden rounded-xl border-2 shadow-xl sm:w-52";
+/** Off stage, but still laid out and still decoding. See ViewMode above. */
+const PANE_OFF = `${PANE_PIP} pointer-events-none opacity-0`;
+
+/**
  * Splits a flat pipe-table string (possibly all on one line with no newlines)
  * into rows by counting columns. Detects the header row's column count,
  * then splits the remaining cells into rows of that width.
@@ -395,18 +444,19 @@ export default function InterviewRoom({
   // config and the SDP offer — have to agree, so it is picked once here rather
   // than at each fetch.
   const vxServer = workflow || roleplay ? VX_SERVER_GPU : VX_SERVER;
-  // The AI pane's shape, which is a property of the AVATAR CLIPS rather than of
-  // the room. Every other track's clips are landscape and fill the default
-  // 72x56 box; vps's were shot portrait, so in that box `object-cover` crops
-  // the sides — which on a standing figure means cropping the very hands the
-  // exercise is about.
+  // How the AI video sits in its pane — a property of the AVATAR CLIPS, not of
+  // the room. Every other track's clips are landscape, so `object-cover` fills
+  // the pane with no visible loss. vps's were shot PORTRAIT, and cover on a
+  // landscape pane crops the left and right off a standing figure — which here
+  // means cropping the very hands the exercise is about.
   //
-  // Height-plus-aspect rather than a width/height pair so the box is described
-  // by the ratio it has to match, not by two numbers that silently stop
-  // agreeing if either is edited. The candidate pane is deliberately untouched:
-  // that is a webcam, and webcams are landscape.
-  const aiPaneClass =
-    roleplay === "vps" ? "h-[28rem] aspect-[9/16]" : "h-56 w-72";
+  // `object-contain` rather than a portrait-shaped pane: the stage is fluid
+  // (PANE_ON is `flex-1`) and its shape changes with viewMode and viewport, so
+  // there is no fixed box to match a ratio against. Letterboxing against the
+  // card background always shows the whole figure, whatever shape the pane
+  // happens to be. The candidate pane is untouched — that is a webcam, and
+  // webcams are landscape.
+  const aiVideoFit = roleplay === "vps" ? "object-contain" : "object-cover";
   const router = useRouter();
   const [started, setStarted] = useState(false);
   const [connState, setConnState] = useState<ConnState>("connecting");
@@ -450,6 +500,22 @@ export default function InterviewRoom({
   const [poseFrame, setPoseFrame] = useState<string | null>(null);
   const [sceneActions, setSceneActions] = useState<string[]>([]);
   const [formDone, setFormDone] = useState(false);
+  // How the two video panes are arranged. A per-person preference rather than
+  // a per-session one — someone who only ever wants to watch the avatar wants
+  // that on every session — so it is remembered in localStorage.
+  //
+  // Reading storage straight in the initialiser is safe here, unusually: this
+  // value is only ever read below the `if (!started)` gate, and `started` is
+  // false on the server, so the remembered layout cannot reach the SSR output
+  // and cannot disagree with it.
+  const [viewMode, setViewMode] = useState<ViewMode>(readSavedViewMode);
+  // Whether the transcript rail is open. Independent of `showTranscript`,
+  // which decides whether there is a transcript to open at all: closing the
+  // rail must not stop the poll that fills it, or reopening it would show a
+  // hole where the turns spoken while it was shut should be.
+  const [transcriptOpen, setTranscriptOpen] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const roomRef = useRef<HTMLDivElement>(null);
 
   const parsedRunningScore = parseRunningScore(runningScore);
   // `turn-away` is in SCENE_PROPS' gaps on purpose — it is recorded on the turn
@@ -459,6 +525,22 @@ export default function InterviewRoom({
     .map((key) => ({ key, prop: SCENE_PROPS[key] }))
     .filter((entry): entry is { key: string; prop: (typeof SCENE_PROPS)[string] } =>
       Boolean(entry.prop),
+    );
+  // Whether the score + props rail is on screen. Read twice — once to render
+  // it, once to reserve the room it needs on the stage — so it is computed once
+  // here rather than being two expressions that can drift.
+  //
+  // `pr` AND `vps`, the two roleplays whose graphs return a running score and
+  // scene actions. Not `mm`, which returns neither, so the rail would be an
+  // empty box pinned over his face for the whole session. vps adds a third
+  // trigger of its own: the pose chip, which can be the only thing in the rail
+  // (he raises a hand long before he has scored or handed anything over).
+  const sideRailVisible =
+    (roleplay === "pr" || roleplay === "vps") &&
+    Boolean(
+      parsedRunningScore ||
+        visibleProps.length > 0 ||
+        (poseFrame && POSE_LABELS[poseFrame]),
     );
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -496,6 +578,37 @@ export default function InterviewRoom({
   // Starts null so the FIRST face of a session is only recorded, never
   // announced — Mr Muthu opening angry is the premise, not a change.
   const lastFrameRef = useRef<string | null>(null);
+
+  function changeViewMode(next: ViewMode) {
+    setViewMode(next);
+    try {
+      window.localStorage.setItem(VIEW_MODE_KEY, next);
+    } catch {
+      // Not being able to remember the choice is not a reason to refuse it.
+    }
+  }
+
+  // Fullscreen is tracked by listening rather than by assuming: Escape and the
+  // browser's own controls exit it without going through our button, and a
+  // toggle that still says "Exit fullscreen" afterwards is worse than none.
+  useEffect(() => {
+    const sync = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await roomRef.current?.requestFullscreen();
+      }
+    } catch {
+      // iOS Safari has no Element.requestFullscreen. The room is already
+      // h-screen, so refusing here costs the student nothing.
+    }
+  }
 
   useEffect(() => {
     if (!started) return;
@@ -1166,9 +1279,12 @@ export default function InterviewRoom({
       try {
         if (typeof MediaRecorder === "undefined") return;
 
-        // Each pane is 4:3 — matches typical webcam capture (and the same
-        // ratio the live on-screen video boxes already use) so a plain
-        // stretch-to-fit never has to distort the picture.
+        // Each pane is 4:3 — matches typical webcam capture, so a plain
+        // stretch-to-fit never has to distort the picture. Fixed, and
+        // deliberately unrelated to the on-screen layout: the saved file is
+        // the same side-by-side composite whichever ViewMode the student was
+        // watching in, which is why the off-stage pane is hidden with opacity
+        // rather than unmounted or `display: none`.
         const PANE_W = 480;
         const PANE_H = 360;
         const CANVAS_W = PANE_W * 2;
@@ -1634,18 +1750,62 @@ export default function InterviewRoom({
   };
 
   return (
-    <div className="flex h-screen flex-col bg-canvas">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-6">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted">
+    <div ref={roomRef} className="flex h-screen flex-col bg-canvas">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="hidden text-xs font-medium uppercase tracking-wide text-muted sm:inline">
             {kindLabel}
           </span>
-          <span className="rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-brand">
+          <span className="truncate rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-brand">
             {interviewerName}
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-xs tabular-nums text-muted">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {/* Layout controls. A native <select> on purpose: it is one tap on a
+              phone, it is keyboard-navigable for free, and this list will keep
+              growing. */}
+          <label className="flex items-center gap-1.5">
+            <span className="sr-only">Adjust view</span>
+            <select
+              value={viewMode}
+              onChange={(e) => changeViewMode(e.target.value as ViewMode)}
+              className="rounded-full border border-line bg-card px-2.5 py-1 text-xs font-medium text-ink outline-none transition hover:border-brand/40 focus:border-brand"
+              title="Adjust view"
+            >
+              {VIEW_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {showTranscript && (
+            <button
+              type="button"
+              onClick={() => setTranscriptOpen((v) => !v)}
+              className={`hidden rounded-full border px-2.5 py-1 text-xs font-medium transition lg:inline-flex ${
+                transcriptOpen
+                  ? "border-brand bg-brand-soft text-brand"
+                  : "border-line bg-card text-muted hover:border-brand/40"
+              }`}
+              title={
+                transcriptOpen
+                  ? "Hide the transcript and widen the video"
+                  : "Show the transcript"
+              }
+            >
+              Transcript
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="rounded-full border border-line bg-card px-2.5 py-1 text-xs font-medium text-ink transition hover:border-brand/40"
+            title={isFullscreen ? "Exit fullscreen" : "Fill the whole screen"}
+          >
+            {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          </button>
+          <span className="hidden font-mono text-xs tabular-nums text-muted sm:inline">
             {fmt(elapsed)}
           </span>
           <span
@@ -1673,13 +1833,7 @@ export default function InterviewRoom({
             Pinned to the left rather than floated over the middle: unlike the
             mood banner these persist for the rest of the session, so they must
             not sit on top of the video. */}
-        {/* Both roleplays that carry a running score and scene props — `pr` and
-            `vps`. Not `mm`, whose graph returns neither, so the panel would be
-            an empty box pinned over his face for the whole session. */}
-        {(roleplay === "pr" || roleplay === "vps") &&
-          (parsedRunningScore ||
-            visibleProps.length > 0 ||
-            (poseFrame && POSE_LABELS[poseFrame])) && (
+        {sideRailVisible && (
           <aside className="absolute left-4 top-4 z-20 w-56 space-y-3">
             {/* What the patient is currently doing with his hands. Above the
                 score on purpose: it is the thing that changes in response to
@@ -1864,57 +2018,81 @@ export default function InterviewRoom({
           </div>
         )}
 
-      <div className="flex flex-1 items-center justify-center gap-10 overflow-hidden">
+      {/* The stage. Both panes fill it rather than sitting at a fixed 224×288:
+          the point of this screen is the face on the other side, and on a
+          laptop the old tiles used about a tenth of the room they had. */}
+      <div
+        className={`relative flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden p-3 sm:p-4 ${
+          // Stacked on a phone, where two half-width panes are two thumbnails.
+          viewMode === "split" ? "flex-col sm:flex-row" : ""
+        } ${
+          // Clear the `pr` prop rail. It is pinned over the stage and persists
+          // for the rest of the session, so unlike the mood banner it must not
+          // end up sitting on top of a face. Only from `sm` up — below that the
+          // rail is off to one side of a stacked layout anyway.
+          sideRailVisible ? "sm:pl-[15.5rem]" : ""
+        }`}
+      >
         {/* candidate */}
-        <div className="flex flex-col items-center gap-3">
-          <div className="grid h-56 w-72 place-items-center overflow-hidden rounded-2xl border border-line bg-black">
-            <video
-              ref={userVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className={hasUserVid ? "h-full w-full object-cover" : "hidden"}
-            />
-            {!hasUserVid && <span className="text-4xl">👤</span>}
-          </div>
-          <span className="text-sm font-medium text-ink">{candidateName}</span>
-          <span className="text-xs uppercase tracking-wide text-muted">
-            candidate
+        <div
+          className={`${
+            viewMode === "split" || viewMode === "you"
+              ? PANE_ON
+              : viewMode === "focus"
+                ? PANE_PIP
+                : PANE_OFF
+          } border-line bg-black`}
+        >
+          <video
+            ref={userVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className={hasUserVid ? "h-full w-full object-cover" : "hidden"}
+          />
+          {!hasUserVid && (
+            <div className="grid h-full w-full place-items-center text-5xl">
+              👤
+            </div>
+          )}
+          {/* Overlaid rather than placed under the pane: a caption below the
+              video is height the video could have had. */}
+          <span className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] truncate rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur">
+            {candidateName} · you
           </span>
         </div>
 
         {/* interviewer */}
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className={`grid ${aiPaneClass} place-items-center overflow-hidden rounded-2xl border bg-card transition ${
-              aiSpeaking ? "border-brand" : "border-line"
-            }`}
-          >
-            <video
-              ref={aiVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className={hasAiVid ? "h-full w-full object-cover" : "hidden"}
-            />
-            {!hasAiVid && (
+        <div
+          className={`${
+            viewMode === "you" ? PANE_OFF : PANE_ON
+          } bg-card transition-colors ${
+            aiSpeaking ? "border-brand" : "border-line"
+          }`}
+        >
+          <video
+            ref={aiVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className={hasAiVid ? `h-full w-full ${aiVideoFit}` : "hidden"}
+          />
+          {!hasAiVid && (
+            <div className="grid h-full w-full place-items-center">
               <span
-                className={`text-5xl ${aiSpeaking ? "text-brand" : "text-faint"}`}
+                className={`text-6xl ${aiSpeaking ? "text-brand" : "text-faint"}`}
               >
                 ◈
               </span>
-            )}
-          </div>
-          <span className="text-sm font-medium text-ink">
-            {interviewerName}
-          </span>
-          <span className="text-xs uppercase tracking-wide text-muted">
-            AI · {aiLabel[aiState]}
+            </div>
+          )}
+          <span className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] truncate rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur">
+            {interviewerName} · AI {aiLabel[aiState]}
           </span>
         </div>
       </div>
 
-      {showTranscript && (
+      {showTranscript && transcriptOpen && (
         <aside className="hidden w-96 shrink-0 flex-col border-l border-line bg-card lg:flex">
           <div className="shrink-0 border-b border-line px-4 py-3">
             <h2 className="text-sm font-semibold text-ink">Transcript</h2>

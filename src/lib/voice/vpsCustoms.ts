@@ -38,7 +38,6 @@ import {
 import { PRACTICE_WEBHOOK_URL } from "./practiceCustoms";
 import {
   VPS_FEEDBACK_PROMPT,
-  VPS_GREETING,
   VPS_OPENING_FRAME,
   VPS_PROMPT,
   VPS_SUMMARY_PROMPT,
@@ -201,17 +200,17 @@ You are speaking out loud, in a clinic consulting room, to a healthcare trainee 
     agent_id: {
       workflow: {
         nodes: {
-          // No `frame`. Both lipsync slots start on the idle face, and the idle
-          // face IS the guarded one (`main`), so he opens at Level 3 unprompted.
-          greeting: {
-            type: "out",
-            parameters: {
-              out_dict: { speak: VPS_GREETING },
-              interruption_type: "no",
-              interruption_metadata: {},
-            },
-            next: "ask_for_input",
-          },
+          // No greeting node — Mr Nair sits there and the trainee has to open,
+          // which for a consultation is the more realistic start anyway: a
+          // patient waits to be spoken to. Removed rather than emptied, for the
+          // reason muthuCustoms and cherylCustoms record — an `out` node with
+          // `speak: ""` still runs the TTS.
+          //
+          // Nothing about his state depended on it. `frame` defaults to "main"
+          // and the idle clip IS the resting pose, so he starts sitting
+          // normally; the emotional scale still opens at Level 3 from the
+          // prompt. VPS_GREETING is kept in vpsPrompt.ts as the line he WOULD
+          // have opened with — see the note there.
           ask_for_input: {
             type: "input",
             parameters: { input_variables: { user_input: "str" } },
@@ -444,7 +443,7 @@ You are speaking out loud, in a clinic consulting room, to a healthcare trainee 
           summary: { type: "str" },
           node_type: { type: "str" },
         },
-        start_node: "greeting",
+        start_node: "ask_for_input",
       },
       "webhook-url": PRACTICE_WEBHOOK_URL,
     },

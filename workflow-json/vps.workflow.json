@@ -35,17 +35,6 @@
   "agent_id": {
     "workflow": {
       "nodes": {
-        "greeting": {
-          "type": "out",
-          "parameters": {
-            "out_dict": {
-              "speak": "Namaste, doctor. My daughter made me come. I told her it is nothing, but she does not listen to me. So here I am, sitting in front of you, wasting your time."
-            },
-            "interruption_type": "no",
-            "interruption_metadata": {}
-          },
-          "next": "ask_for_input"
-        },
         "ask_for_input": {
           "type": "input",
           "parameters": {
@@ -264,7 +253,7 @@
           "type": "str"
         }
       },
-      "start_node": "greeting"
+      "start_node": "ask_for_input"
     },
     "webhook-url": "/api/practice/webhook"
   },

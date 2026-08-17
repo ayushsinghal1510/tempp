@@ -184,7 +184,11 @@
       "Bash(pm2 list *)",
       "PowerShell(Get-CimInstance *)",
       "Read(//d/vx/vx-backend-monorepo/agent/src/agent/routers/agents/**)",
-      "Read(//d/vx/vx-backend-monorepo/voicebot/**)"
+      "Read(//d/vx/vx-backend-monorepo/voicebot/**)",
+      "Bash(npx pm2 *)",
+      "Bash(npm init *)",
+      "Bash(echo \"tsc exit: $?\")",
+      "Bash(git add *)"
     ]
   }
 }

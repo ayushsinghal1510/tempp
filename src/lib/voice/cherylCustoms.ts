@@ -36,7 +36,6 @@ import {
 import { PRACTICE_WEBHOOK_URL } from "./practiceCustoms";
 import {
   CHERYL_FEEDBACK_PROMPT,
-  CHERYL_GREETING,
   CHERYL_OPENING_FRAME,
   CHERYL_PROMPT,
   CHERYL_SUMMARY_PROMPT,
@@ -86,17 +85,14 @@ You are speaking out loud, at a retail service counter, to a frontline trainee n
     agent_id: {
       workflow: {
         nodes: {
-          // No `frame`. Both lipsync slots start on the idle face, and the idle
-          // face IS the firm one (`main`), so he opens at Level 3 unprompted.
-          greeting: {
-            type: "out",
-            parameters: {
-              out_dict: { speak: CHERYL_GREETING },
-              interruption_type: "no",
-              interruption_metadata: {},
-            },
-            next: "ask_for_input",
-          },
+          // No greeting node — Mr Cheryl opens silent and the trainee has to
+          // speak first, which on a service counter is the more realistic
+          // opening anyway. Removed rather than emptied for the reason in
+          // muthuCustoms: an `out` node with `speak: ""` still runs the TTS.
+          //
+          // He still arrives at Level 3. Both lipsync slots start on the idle
+          // face and the idle face IS the firm one (`main`), so his opening
+          // mood never depended on the greeting.
           ask_for_input: {
             type: "input",
             parameters: { input_variables: { user_input: "str" } },
@@ -303,7 +299,7 @@ You are speaking out loud, at a retail service counter, to a frontline trainee n
           summary: { type: "str" },
           node_type: { type: "str" },
         },
-        start_node: "greeting",
+        start_node: "ask_for_input",
       },
       "webhook-url": PRACTICE_WEBHOOK_URL,
     },

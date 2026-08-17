@@ -180,8 +180,12 @@ export default async function PracticeRoundResultsPage({
           <p className="mt-1 text-base font-medium text-ink">
             {companyLabel ?? "General practice — no specific company"}
           </p>
+          {/* No status here any more. "In progress" was shown on any round
+              whose completion write hadn't landed, which on a session the
+              student had plainly just finished read as a failure — and
+              "Completed" on a page you can only reach after the fact says
+              nothing. The turn count is the part that identifies the run. */}
           <p className="mt-1 text-sm text-muted">
-            {round.status === "completed" ? "Completed" : "In progress"} ·{" "}
             {round.turns.length} turn{round.turns.length === 1 ? "" : "s"}{" "}
             captured
           </p>

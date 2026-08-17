@@ -111,11 +111,17 @@ export const VPS_ACTIONS = [
 export type VpsAction = (typeof VPS_ACTIONS)[number];
 
 /**
- * Spoken first, before the trainee says anything.
+ * NO LONGER SPOKEN — same change as MUTHU_GREETING and CHERYL_GREETING. The
+ * consultation opens silent and the trainee speaks first, which for a patient
+ * is the more realistic start anyway; `vpsCustoms.ts` starts on
+ * `ask_for_input`. Kept for `scripts/seed-vps.ts`, which writes it into the
+ * read-only copy of the simulation the admin reads.
  *
- * He opens deflecting, not complaining — the opposite of Mr Cheryl. Nothing in
- * this line mentions the foot: making the trainee find the reason for the visit
- * is the first thing the scenario tests.
+ * Left as written rather than deleted because it still documents WHERE he
+ * starts: deflecting, not complaining — the opposite of Mr Cheryl — and saying
+ * nothing about the foot, so finding the reason for the visit is the first
+ * thing the scenario tests. He answers from that position now instead of
+ * announcing it.
  */
 export const VPS_GREETING =
   "Namaste, doctor. My daughter made me come. I told her it is nothing, but she does not listen to me. So here I am, sitting in front of you, wasting your time.";
